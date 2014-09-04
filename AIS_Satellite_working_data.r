@@ -109,6 +109,8 @@ lapply(csv[,grep('Dest',names(csv))], unique)
 # since there are a LOT of NA's in the columns lets find ones that have all or no NA's so we can remove/focus on those 
 test_na <- apply(csv,2,function(x) (length(which(is.na(x) == TRUE))-nrow(csv)))
 
+which( abs(test_na) < (nrow(csv)*.10) )
+
 # which returns the following:
  #                  MMSI             Message_ID       Repeat_indicator 
  #               -651260                -651260                -651260 
@@ -285,6 +287,10 @@ apply(csv_some_dat,2, function(x) length(which(is.na(x) == FALSE)))
 	only exists for a single day.  This is quite obviously very wrong and is something that had to be done due to the lack
 	of transect identifiers.
 
+4. I am not seeing any destination flag which would help id some unique transects, my best stab at it now is to link together 
+	MMSI and Date into a new field and split the data that way into somewhat unique transects.
+
+
 
 # test of the ExactEarth historical csv 
 # this calculates the percentage of missing data in each column 
@@ -297,4 +303,42 @@ missing_dat <- lapply(csv, function(x) length(which(is.na(x) == TRUE))/nrow(csv)
 2. put it in an sqlite database?  I am not even sure this is good practice.
 
 
+# new work: 10/31/2013
 
+# METHOD ONE:  here I am going to create the unique transects using a combination of the MMSI and the Time fields
+
+# combine the MMSI and a portion of the Time field 
+#  and split it based on this new variable.
+csv_split_mmsi_time <- split(csv, paste(csv$MMSI, substring(as.character(csv$Time),1,8), sep='--'))
+
+# NOTE: there is a Destination field that has destinations of the ships, I need to explore further what to do with it in conjunction with MMSI and Time... 
+
+
+# METHOD TWO: could involve using some sort of ship rotation as a way to determine a new transect, but this is up in the air as I have
+# not a clue how to code that up.
+
+
+
+# the grouping of the ships should be able to be done by mapping the MMSI column to the old groupings from the last set.
+
+# there are some very different poorly spelled names in this set as well, I am not exactly sure how to best go about creating common namings for unique destination locations
+
+#  NEW STUFF
+
+# lets find out if the columns with data vary across data sets
+filelist <- list.files('/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite/downloaded_data_extracted', pattern='.csv$', full.names=TRUE)
+
+f <- function(x){
+	print(x)
+	csv <- read.csv(x, sep=',')
+	test_na <- apply( csv, 2, function(y) (length(which(is.na(y) == TRUE))-nrow(csv)) )
+
+	return( which( abs(test_na) > (nrow(csv)*.10) ) )
+	rm(csv)
+}
+
+hold <- mclapply(filelist[1:2], f, mc.cores=detectCores())
+
+# how big are the files?
+
+1048576
