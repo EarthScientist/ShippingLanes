@@ -291,8 +291,9 @@ col_dtypes_dict = dict([ ('MMSI','int'), ('Message_ID','str'), ('Repeat_indicato
 output_base_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/CODE/Output_Data' #'/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/outputs'
 input_data_path = '/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/data/ExactEarth_extracted_v2'
 base_path = setup_dirs( output_base_path ) # returns the output base path generated parent folder
+os.chdir( output_base_path )
 # base_path = '/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/outputs/Mon_Mar_31_2014_190122'
-join_csv_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/CODE/ShippingLanes/IHS_ShipData_COMBINED_MLedit.csv' #'/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/data/IHS_table/IHS_ShipData_Tim_Robertson_ShipTypeCodes_MLeditColnames.csv'
+join_csv_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/CODE/ShippingLanes/ETC/IHS_ShipData_COMBINED_MLedit.csv' #'/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/data/IHS_table/IHS_ShipData_Tim_Robertson_ShipTypeCodes_MLeditColnames.csv'
 join_column = 'MMSI'
 join_type = 'inner'
 
