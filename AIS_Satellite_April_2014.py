@@ -422,9 +422,9 @@ from fiona.crs import from_epsg
 
 months = range(1,(12 + 1))
 
-base_path = '/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/outputs/Mon_Apr_7_2014_000717'
+# base_path = '/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/outputs/Mon_Apr_7_2014_000717'
 shoreline = '/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/data/shorelines/BEST_SHORELINE/Bering_Chukchi_Shoreline_3338_aoi.shp'
-Multi = MultiPolygon([shape(pol['geometry']) for pol in fiona.open(shoreline)])
+# Multi = fiona.open( shoreline ) # shape([i for i, pol in enumerate()]) MultiPolygon
 
 files = glob.glob(os.path.join(base_path,'csv','dropped','*_dropcols.csv'))
 
@@ -492,7 +492,7 @@ for f in files:
 
 
 # # # # CONVERT LINES SHAPEFILES TO RASTERS # # # # # #
-
+rasterio.open('/workspace/UA/malindgren/projects/ShippingLanes/AIS_Satellite_v2/data/shorelines/BEST_SHORELINE/Bering_Chukchi_Shoreline_3338_aoi.shp')
 
 # as an aside we will run these through the ArcGIS 10.2 Simple Line Density algorithm because mine is too slow
 #  even though it is parallelized. I will do more work on that function as I have some time
