@@ -77,6 +77,29 @@ if __name__ == '__main__':
 		'csv','missing_data_metrics','AIS_Satellite_v3_missing_mmsi_ihs_table_valid_uniques.txt' ),
 		 sep=',' )
 
+	# Now it is necessary to figure out which of the MMSI's were actually used in the analysis
+	#	unfortunately, to do this we need to run the entire read sequence again due to an oversight
+	# # this would be better included in the above multiprocessing pool function.  This is just a time saver
+	files = glob.glob( os.path.join(base_path,'csv','dropped','*_dropcols.csv') )
+
+	def get_MMSI_used( x ):
+		'''
+		return some metrics about the data.
+		'''
+		cur_df = pd.read_csv( x, usecols=[ 'MMSI' ], dtype=str, error_bad_lines=False )
+		cur_df.MMSI = cur_df.MMSI.astype( int )
+		return np.unique( cur_df.MMSI )
+
+	# run it in parallel with 14 cores
+	p = mp.Pool( 14 )
+	out = p.map( get_MMSI_used, files )
+	final_MMSI_used = np.unique( [ j for i in out for j in i ] )
+
+	# write that result out to a text file for later use.
+	np.array( final_MMSI_used ).tofile( os.path.join( base_path,
+		'csv','missing_data_metrics','AIS_Satellite_v3_mmsi_used_in_analysis_uniques.txt' ),
+		 sep=',' )
+
 	# now lets print a final output report:
 	with open( os.path.join( base_path, 'csv', 'missing_data_metrics', 'AIS_Satellite_v3_output_summary_report_missing_mmsi.txt' ), mode = 'w' ) as output_report:
 		output_report.write( '- - - - - - - - - - - - - - - - - - - - - - - - - - -' + '\n' )
@@ -92,6 +115,8 @@ if __name__ == '__main__':
 		output_report.write( 'Number of Unique MMSIs that were parseable, but not used: ' + str( missing_unique_mmsi_count ) + '\n' )
 		output_report.write( '' + '\n' )
 		output_report.write( 'Number of Unique MMSIs that were parseable, but not used with valid MMSI integers: ' + str( missing_unique_mmsi_valid_count ) + '\n' )
+		output_report.write( '' + '\n' )
+		output_report.write( 'Number of unique MMSI that were used in the final analysis: ' + str( len( final_MMSI_used ) ) + '\n' )
 		output_report.write( '' + '\n' )
 		output_report.write( '' + '\n' )
 		output_report.write( 'Please see other report documents for the lists of these actual values if they are needed for further processing later on.' + '\n' )
