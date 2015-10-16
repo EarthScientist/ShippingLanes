@@ -326,3 +326,18 @@ if __name__ == '__main__':
 # 		except:
 # 			print 'ERROR RUN %s: ' % os.path.basename( i )
 # 			pass
+
+
+
+# # GOOD FILES:
+# Bulk_Carriers_grouped
+# Dry_Cargo_Passenger_grouped
+# Fishing_grouped
+# Miscellaneous_grouped
+# Non_Merchant_Ships_grouped
+
+# # BAD FILES:
+# Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG
+# Non_Ship_Structures_grouped: TypeError: invalid type comparison -- SOG
+# Non_Seagoing_Merchant_Ships_grouped: IndexError: index 0 is out of bounds for axis 0 with size -- MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+
