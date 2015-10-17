@@ -16,7 +16,7 @@ def rolling_window( a, window ):
 	shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
 	strides = a.strides + (a.strides[-1],)
 	return np.lib.stride_tricks.as_strided( a, shape=shape, strides=strides )
-def calculate_distance(lat1, lon1, lat2, lon2, **kwargs):
+def calculate_distance( lat1, lon1, lat2, lon2, **kwargs ):
 	'''
 	Calculates the distance between two points given their (lat, lon) co-ordinates.
 	It uses the Spherical Law Of Cosines (http://en.wikipedia.org/wiki/Spherical_law_of_cosines):
@@ -121,6 +121,7 @@ def group_voyages( mmsi_group, speed_limit=0.9 ):
 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
 	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.day_breaks.astype( np.int16 ) # convert Boolean to Integer
 	return cluster_groups
+
 def insert_direction_distance( x ):
 	''' add in the Direction and Distance columns '''
 	from geopy.distance import vincenty
@@ -132,11 +133,11 @@ def insert_direction_distance( x ):
 	bearings = [ calculate_initial_compass_bearing( (lats[0], lons[0]), (lats[1], lons[1]) ) for lons, lats in lonlats ]
 	bearings.insert( 0, bearings[0] ) # add in a duplicate value at the beginning the series since it is a rolling window output
 	# bearings.append( bearings[ len(bearings)-1 ] ) # add in duplicate value at the end of the series 
-	x[ 'Direction' ] = bearings
+	x.loc[ :, 'Direction' ] = bearings
 
 	# simple directionality
 	simple_directions_dict = {'NE':(-1.0,90.0),'SE':(90.0,180.0),'SW':(180.0,270.0),'NW':(270.0,361.0)}
-	x[ 'simple_direction' ] = '' # empty col to fill
+	x.loc[ :, 'simple_direction' ] = '' # empty col to fill
 	# iterate through the key value pairs and fill it in with the new simple value
 	for k,v in simple_directions_dict.iteritems():
 		l,h = v
@@ -146,11 +147,50 @@ def insert_direction_distance( x ):
 	dist_list.insert( 0, 0 ) # add back in that zero lost at the beginning
 	x[ 'Distance' ] = dist_list
 	return x
+def is_outlier( points, thresh=3.5 ):
+	"""
+	Returns a boolean array with True if points are outliers and False 
+	otherwise.
+
+	Parameters:
+	-----------
+		points : An numobservations by numdimensions array of observations
+		thresh : The modified z-score to use as a threshold. Observations with
+			a modified z-score (based on the median absolute deviation) greater
+			than this value will be classified as outliers.
+
+	Returns:
+	--------
+		mask : A numobservations-length boolean array.
+
+	References:
+	----------
+		Boris Iglewicz and David Hoaglin (1993), "Volume 16: How to Detect and
+		Handle Outliers", The ASQC Basic References in Quality Control:
+		Statistical Techniques, Edward F. Mykytka, Ph.D., Editor. 
+
+	borrowed from:
+	--------------
+	http://stackoverflow.com/questions/22354094/
+			pythonic-way-of-detecting-outliers-in-one-dimensional-observation-data
+	"""
+	if len(points.shape) == 1:
+		points = points[:,None]
+	median = np.median(points, axis=0)
+	diff = np.sum((points - median)**2, axis=-1)
+	diff = np.sqrt(diff)
+	med_abs_deviation = np.median(diff)
+	modified_z_score = 0.6745 * diff / med_abs_deviation
+	return modified_z_score > thresh
 def line_it( x ):
 	'''
 	function to be used in a groupby/apply to help generate the needed output line
 	GeoDataFrame.
 	'''
+	# detect and remove outliers based on latitudes:
+	lat_col = 'akalb_lat'
+	x = x[ lat_col ][ ~is_outlier( x[ lat_col ], thresh=3.5 ) ]
+
 	begin_row = x.head( 1 )
 	end_row = x.tail( 1 )
 	
@@ -172,20 +212,28 @@ if __name__ == '__main__':
 	import pandas as pd
 	import numpy as np
 	from geopy.distance import vincenty
-	import datetime, math, os, argparse
+	import datetime, math, os, glob, argparse
 	import geopandas as gpd
 	from pyproj import Proj
 	from shapely.geometry import Point, LineString
 	from collections import OrderedDict
+	from pathos import multiprocessing as mp
 	
-	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
 
-	# parse all the arguments 
-	args = parser.parse_args()
-	fn = args.fn
-	output_path = args.output_path
+	# # parse all the arguments 
+	# args = parser.parse_args()
+	# fn = args.fn
+	# output_path = args.output_path
+
+	# FOR TESTING REMOVE!
+	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
+	fn = l[0]
+	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+
+	ncpus = 31
 
 	print 'working on: %s' % os.path.basename( fn )
 
@@ -223,8 +271,18 @@ if __name__ == '__main__':
 	# drop SOG with np.nan -- speed over ground
 	df = df.loc[ -df.SOG.isnull(), : ]
 
-	# run this new version of the function:
+	# run this new version of the function: -- 5.5 mins
 	MMSI_grouped = df.groupby( 'MMSI' ).apply( lambda x: group_voyages( x ) ) # returns a new column called clusters which have the groupings...
+
+	# parallel example  -- is this faster?
+	# ncpus = 6
+	# if __name__ == '__main__':
+	# 	MMSI_grouped = df.groupby( 'MMSI' )
+	# 	hold = [ j for i,j in MMSI_grouped ]
+	# 	pool = mp.Pool( ncpus )
+	# 	out = pool.map( group_voyages, hold )
+	# 	pool.close()
+
 
 	# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
 	# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
@@ -283,19 +341,42 @@ if __name__ == '__main__':
 		voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
 
 		# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
-		voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
+		# voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
+
+		# ALSO PARALLELIZE THIS:
+		# if __name__ == '__main__':
+		lonlat = zip( voyages_complete.Longitude.tolist(), voyages_complete.Latitude.tolist() )
+
+		# make a pool and use it
+		pool = mp.Pool( ncpus )
+		voyages_complete[ 'geometry' ] = pool.map( Point, lonlat )
+		pool.close( )
+
+		# GeoDataFrame it -- GeoPANDAS
 		gdf = gpd.GeoDataFrame( voyages_complete, crs={'init':'epsg:4326'}, geometry='geometry' )
 		
 		# reproject this data into 3338 -- AKALBERS
 		gdf_3338 = gdf.to_crs( epsg=3338 )
-		ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
-		ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
+		# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
+		# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
+
+		# lets do this in parallel to try and get it done faster:
+		# if __name__ == '__main__':
+		pool = mp.Pool( ncpus )
+		ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
+		pool.close()
+
 		gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
 
 		# group the data into Voyages
 		voyages_grouped = gdf_3338.groupby( 'Voyage' )
 
-		gdf_mod = voyages_grouped.apply( line_it )
+		# # TEST 
+		# bad_line = '538005040_1'
+		# bad_line = gdf_3338.ix[voyages_grouped.groups[ bad_line ]]
+		# # END TEST
+
+		gdf_mod = voyages_grouped.apply( line_it ) # remove errant points function here
 		gdf_mod = gdf_mod.reset_index( drop=True )
 		gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
 
@@ -317,7 +398,7 @@ if __name__ == '__main__':
 #
 # 	# list the files to run and set output path
 # 	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_nosplit'
+# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 # 	command_start = 'ais_shipping_voyage_splitter_phase3_b.py -p ' + output_path + ' -fn '
 #
 # 	for i in l:
