@@ -219,19 +219,19 @@ if __name__ == '__main__':
 	from collections import OrderedDict
 	from pathos import multiprocessing as mp
 	
-	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
 
-	# # parse all the arguments 
-	# args = parser.parse_args()
-	# fn = args.fn
-	# output_path = args.output_path
+	# parse all the arguments
+	args = parser.parse_args()
+	fn = args.fn
+	output_path = args.output_path
 
-	# FOR TESTING REMOVE!
-	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-	fn = l[0]
-	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+	# # FOR TESTING REMOVE!
+	# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
+	# fn = l[0]
+	# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 
 	ncpus = 31
 
@@ -245,30 +245,34 @@ if __name__ == '__main__':
 
 	# FIX COLUMNS WITH MIXED TYPES. [15,16,19,20] or [ 'ROT', 'SOG', 'COG', 'Heading' ]
 	# fix ROT
-	if (df.ROT == 'None').any() == True:
-		df.loc[ df.ROT == 'None', 'ROT' ] = '9999'
-		df.loc[ :, 'ROT' ] = df.ROT.astype( np.float32 )
-		df.loc[ df.ROT == 9999, 'ROT' ] = np.nan
+	if df.ROT.dtype == np.object:
+		if (df.ROT == 'None').any() == True:
+			df.loc[ df.ROT == 'None', 'ROT' ] = '9999'
+			df.loc[ :, 'ROT' ] = df.ROT.astype( np.float32 )
+			df.loc[ df.ROT == 9999, 'ROT' ] = np.nan
 
 	# fix SOG
-	if (df.SOG == 'None').any() == True:
-		df.loc[ df.SOG == 'None', 'SOG' ] = '9999'
-		df.loc[ :, 'SOG' ] = df.SOG.astype( np.float32 )
-		df.loc[ df.SOG == 9999, 'SOG' ] = np.nan
+	if df.SOG.dtype == np.object:
+		if (df.SOG == 'None').any() == True:
+			df.loc[ df.SOG == 'None', 'SOG' ] = '9999'
+			df.loc[ :, 'SOG' ] = df.SOG.astype( np.float32 )
+			df.loc[ df.SOG == 9999, 'SOG' ] = np.nan
 
 	# fix COG
-	if (df.COG == 'None').any() == True:
-		df.loc[ df.COG == 'None', 'COG' ] = '9999'
-		df.loc[ :, 'COG' ] = df.COG.astype( np.float32 )
-		df.loc[ df.COG == 9999, 'COG' ] = np.nan
+	if df.COG.dtype == np.object:
+		if (df.COG == 'None').any() == True:
+			df.loc[ df.COG == 'None', 'COG' ] = '9999'
+			df.loc[ :, 'COG' ] = df.COG.astype( np.float32 )
+			df.loc[ df.COG == 9999, 'COG' ] = np.nan
 
 	# fix Heading
-	if (df.Heading == 'None').any() == True:
-		df.loc[ df.Heading == 'None', 'Heading' ] = '9999'
-		df.loc[ :, 'Heading' ] = df.Heading.astype( np.float32 )
-		df.loc[ df.Heading == 9999, 'Heading' ] = np.nan
+	if df.Heading.dtype == np.object:
+		if (df.Heading == 'None').any() == True:
+			df.loc[ df.Heading == 'None', 'Heading' ] = '9999'
+			df.loc[ :, 'Heading' ] = df.Heading.astype( np.float32 )
+			df.loc[ df.Heading == 9999, 'Heading' ] = np.nan
 
-	# drop SOG with np.nan -- speed over ground
+	# drop SOG with np.nan (NULL) -- speed over ground
 	df = df.loc[ -df.SOG.isnull(), : ]
 
 	# run this new version of the function: -- 5.5 mins
@@ -286,57 +290,57 @@ if __name__ == '__main__':
 
 	# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
 	# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
-	unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
-	keep_list = unique_counts_df[ unique_counts_df[ 'count' ] > 100 ][ 'unique' ]
-	MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ]
+	if df.shape[0] > 100: # since we are dropping Voyages with <100 anyhow
+		unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
+		keep_list = unique_counts_df[ unique_counts_df[ 'count' ] > 100 ][ 'unique' ]
+		MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ]
 
-	# # add in the Voyage column -- the unique id of MMSI and unique transect number
-	MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+		# # add in the Voyage column -- the unique id of MMSI and unique transect number
+		MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
 
-	# add in Direction, Distance, and simple_direction fields using the above function
-	voyages = MMSI_grouped_keep.groupby( 'Voyage' )
-	voyages_complete = voyages.apply( insert_direction_distance )
+		# add in Direction, Distance, and simple_direction fields using the above function
+		voyages = MMSI_grouped_keep.groupby( 'Voyage' )
+		voyages_complete = voyages.apply( insert_direction_distance )
 
-	# make an output directory to store the csvs and shapefiles if needed
-	if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
-		os.makedirs( os.path.join( output_path, 'csvs' ) )
-	
-	if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
-		os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+		# make an output directory to store the csvs and shapefiles if needed
+		if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
+			os.makedirs( os.path.join( output_path, 'csvs' ) )
+		
+		if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
+			os.makedirs( os.path.join( output_path, 'shapefiles' ) )
 
-	# write it out to a csv
-	output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-	voyages_complete.to_csv( output_filename, sep=',' )
+		# write it out to a csv
+		output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
+		voyages_complete.to_csv( output_filename, sep=',' )
 
-	# a hardwired set of column names and dtypes for output shapefile
-	COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
-										('Message_ID', np.int32),
-										('Repeat_indicator', np.int32),
-										('Time', np.object),
-										('Millisecond', np.int32),
-										('Region', np.float32),
-										('Country', np.int32),
-										('Base_station', np.int32),
-										('Vessel_Name', np.float32),
-										('Call_sign', np.float32),
-										('IMO_ee', np.float32),
-										('Ship_Type', np.float32),
-										('Destination', np.float32),
-										('ROT', np.float32),
-										('SOG', np.float32),
-										('Longitude', np.float32),
-										('Latitude', np.float32),
-										('COG', np.float32),
-										('Heading', np.float32),
-										('IMO_ihs', np.int32),
-										('ShipName', np.object),
-										('PortofRegistryCode', np.int32),
-										('ShiptypeLevel2', np.object),
-										('Voyage', np.object),
-										('Direction', np.float32),
-										('simple_direction', np.object)] )
+		# a hardwired set of column names and dtypes for output shapefile
+		COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
+											('Message_ID', np.int32),
+											('Repeat_indicator', np.int32),
+											('Time', np.object),
+											('Millisecond', np.int32),
+											('Region', np.float32),
+											('Country', np.int32),
+											('Base_station', np.int32),
+											('Vessel_Name', np.float32),
+											('Call_sign', np.float32),
+											('IMO_ee', np.float32),
+											('Ship_Type', np.float32),
+											('Destination', np.float32),
+											('ROT', np.float32),
+											('SOG', np.float32),
+											('Longitude', np.float32),
+											('Latitude', np.float32),
+											('COG', np.float32),
+											('Heading', np.float32),
+											('IMO_ihs', np.int32),
+											('ShipName', np.object),
+											('PortofRegistryCode', np.int32),
+											('ShiptypeLevel2', np.object),
+											('Voyage', np.object),
+											('Direction', np.float32),
+											('simple_direction', np.object)] )
 
-	try:
 		# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
 		voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
 
@@ -383,10 +387,9 @@ if __name__ == '__main__':
 		# make geo and output as a shapefile
 		output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles' )
 		gdf_mod.to_file( output_filename )
-	except:
-		print 'ERROR %s: ' % os.path.basename( output_filename )
-		pass
-
+	else:
+		print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
+		
 
 # # # # # # # # # # # # # # # # # # 
 # # # how to run this application:
@@ -415,7 +418,7 @@ if __name__ == '__main__':
 # Dry_Cargo_Passenger_grouped
 # Fishing_grouped
 # Miscellaneous_grouped
-# Non_Merchant_Ships_grouped
+# Non_Merchant_Ships_grouped -- QUESTIONABLE...
 
 # # BAD FILES:
 # Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG
