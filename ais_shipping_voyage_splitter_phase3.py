@@ -100,28 +100,48 @@ def ais_time_to_datetime( x ):
 	month, day = [ int(i) for i in re.findall( '..?', date[4:] ) ]
 	hour, minute, second = [ int(i) for i in re.findall( '..?', time ) ]
 	return datetime.datetime( year, month, day, hour, minute, second )
+# def group_voyages( mmsi_group, speed_limit=0.9 ):
+# 	''' group the data into unique voyages following stationarity and time differences between pings '''
+# 	cur_df = mmsi_group
+# 	# # sort by Time since a ship cant go 2 places at the same time.
+# 	cur_df[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
+# 	cur_df = cur_df.sort_values( by='datetime_tmp' )
+	
+# 	# time
+# 	time_diff = cur_df[ 'datetime_tmp' ].diff()
+# 	cur_df = cur_df.drop( ['datetime_tmp'], axis=1 ) # drop the temporary column
+# 	one_day = pd.Timedelta( 1,'D' )
+# 	cur_df[ 'day_breaks' ] = ( time_diff > one_day )
+	
+# 	# create a grouping variable that will be used to break up the groups:
+# 	# http://stackoverflow.com/questions/19911206/how-to-find-times-when-a-variable-is-below-a-certain-value-in-pandas
+# 	non_stationary = (cur_df.SOG > speed_limit)
+# 	clusters = ( non_stationary == True ) & ( cur_df['day_breaks'] == False )
+# 	cur_df[ 'clusters' ] = str( cur_df[ 'MMSI' ].tolist()[0] ) + '_' + ( clusters != clusters.shift() ).cumsum().astype( str )
+# 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
+# 	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.day_breaks.astype( np.int16 ) # convert Boolean to Integer
+# 	return cluster_groups
 def group_voyages( mmsi_group, speed_limit=0.9 ):
 	''' group the data into unique voyages following stationarity and time differences between pings '''
 	cur_df = mmsi_group
 	# # sort by Time since a ship cant go 2 places at the same time.
-	cur_df[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
+	cur_df.loc[ :, 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
 	cur_df = cur_df.sort_values( by='datetime_tmp' )
 	
 	# time
 	time_diff = cur_df[ 'datetime_tmp' ].diff()
 	cur_df = cur_df.drop( ['datetime_tmp'], axis=1 ) # drop the temporary column
 	one_day = pd.Timedelta( 1,'D' )
-	cur_df[ 'day_breaks' ] = ( time_diff > one_day )
+	cur_df.loc[ :, 'day_breaks' ] = ( time_diff > one_day )
 	
 	# create a grouping variable that will be used to break up the groups:
 	# http://stackoverflow.com/questions/19911206/how-to-find-times-when-a-variable-is-below-a-certain-value-in-pandas
 	non_stationary = (cur_df.SOG > speed_limit)
 	clusters = ( non_stationary == True ) & ( cur_df['day_breaks'] == False )
-	cur_df[ 'clusters' ] = str( cur_df[ 'MMSI' ].tolist()[0] ) + '_' + ( clusters != clusters.shift() ).cumsum().astype( str )
+	cur_df.loc[ :, 'clusters' ] = str( cur_df[ 'MMSI' ].tolist()[0] ) + '_' + ( clusters != clusters.shift() ).cumsum().astype( str )
 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
 	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.day_breaks.astype( np.int16 ) # convert Boolean to Integer
 	return cluster_groups
-
 def insert_direction_distance( x ):
 	''' add in the Direction and Distance columns '''
 	from geopy.distance import vincenty
@@ -141,11 +161,11 @@ def insert_direction_distance( x ):
 	# iterate through the key value pairs and fill it in with the new simple value
 	for k,v in simple_directions_dict.iteritems():
 		l,h = v
-		x[ 'simple_direction' ][ (x['Direction'] >= l) & (x[ 'Direction' ] < h) ] = k
+		x.loc[ (x['Direction'] >= l) & (x[ 'Direction' ] < h), 'simple_direction' ] = k
 	# distance
 	dist_list = [ vincenty( (lats[0], lons[0]), (lats[1], lons[1]) ).nautical for lons, lats in lonlats ]
 	dist_list.insert( 0, 0 ) # add back in that zero lost at the beginning
-	x[ 'Distance' ] = dist_list
+	x.loc[ :, 'Distance' ] = dist_list
 	return x
 def is_outlier( points, thresh=3.5 ):
 	"""
@@ -189,7 +209,7 @@ def line_it( x ):
 	'''
 	# detect and remove outliers based on latitudes:
 	lat_col = 'akalb_lat'
-	x = x[ lat_col ][ ~is_outlier( x[ lat_col ], thresh=3.5 ) ]
+	x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), lat_col ]
 
 	begin_row = x.head( 1 )
 	end_row = x.tail( 1 )
@@ -205,7 +225,7 @@ def line_it( x ):
 	out_row.index = [0]
 	new_cols_df = pd.DataFrame({ 'lon_begin':lon_begin, 'lon_end':lon_end, 'lat_begin':lat_begin, 'lat_end':lat_end, 'time_begin':time_begin, 'time_end':time_end, 'bear_begin':bearing_begin, 'bear_end':bearing_end, 'dir_begin':direction_begin, 'dir_end':direction_end }, index = out_row.index)
 	out_row = out_row.join( new_cols_df )
-	out_row.geometry = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
+	out_row.loc[ : , 'geometry' ] = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
 	return out_row
 
 if __name__ == '__main__':
@@ -389,24 +409,24 @@ if __name__ == '__main__':
 		gdf_mod.to_file( output_filename )
 	else:
 		print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
-		
+
 
 # # # # # # # # # # # # # # # # # # 
 # # # how to run this application:
 # if __name__ == '__main__':
 # 	import glob, os
-#
+
 # 	# set the path to where the script file is stored: [hardwired]
 # 	os.chdir( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/CODE/ShippingLanes' )
-#
+
 # 	# list the files to run and set output path
 # 	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
 # 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 # 	command_start = 'ais_shipping_voyage_splitter_phase3_b.py -p ' + output_path + ' -fn '
-#
+
 # 	for i in l:
 # 		try:
-# 			os.system( 'ipython2.7 -c "%run ' + command_start + i + '"')
+# 			os.system( 'ipython -c "%run ' + command_start + i + '"')
 # 		except:
 # 			print 'ERROR RUN %s: ' % os.path.basename( i )
 # 			pass
