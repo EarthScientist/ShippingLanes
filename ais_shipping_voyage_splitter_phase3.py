@@ -32,7 +32,8 @@ def calculate_distance( lat1, lon1, lat2, lon2, **kwargs ):
 	x = cos(c) = sin(a) * sin(b) + cos(a) * cos(b) * cos(C)
 
 	Finally the distance is arccos(x)
-	borrowed from: https://gmigdos.wordpress.com/2010/03/31/python-calculate-the-distance-between-2-points-given-their-coordinates/
+	borrowed from: https://gmigdos.wordpress.com/2010/03/31/
+				python-calculate-the-distance-between-2-points-given-their-coordinates/
 	'''
 	import math
 	if ((lat1 == lat2) and (lon1 == lon2)):
@@ -100,27 +101,6 @@ def ais_time_to_datetime( x ):
 	month, day = [ int(i) for i in re.findall( '..?', date[4:] ) ]
 	hour, minute, second = [ int(i) for i in re.findall( '..?', time ) ]
 	return datetime.datetime( year, month, day, hour, minute, second )
-# def group_voyages( mmsi_group, speed_limit=0.9 ):
-# 	''' group the data into unique voyages following stationarity and time differences between pings '''
-# 	cur_df = mmsi_group
-# 	# # sort by Time since a ship cant go 2 places at the same time.
-# 	cur_df[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
-# 	cur_df = cur_df.sort_values( by='datetime_tmp' )
-	
-# 	# time
-# 	time_diff = cur_df[ 'datetime_tmp' ].diff()
-# 	cur_df = cur_df.drop( ['datetime_tmp'], axis=1 ) # drop the temporary column
-# 	one_day = pd.Timedelta( 1,'D' )
-# 	cur_df[ 'day_breaks' ] = ( time_diff > one_day )
-	
-# 	# create a grouping variable that will be used to break up the groups:
-# 	# http://stackoverflow.com/questions/19911206/how-to-find-times-when-a-variable-is-below-a-certain-value-in-pandas
-# 	non_stationary = (cur_df.SOG > speed_limit)
-# 	clusters = ( non_stationary == True ) & ( cur_df['day_breaks'] == False )
-# 	cur_df[ 'clusters' ] = str( cur_df[ 'MMSI' ].tolist()[0] ) + '_' + ( clusters != clusters.shift() ).cumsum().astype( str )
-# 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
-# 	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.day_breaks.astype( np.int16 ) # convert Boolean to Integer
-# 	return cluster_groups
 def group_voyages( mmsi_group, speed_limit=0.9 ):
 	''' group the data into unique voyages following stationarity and time differences between pings '''
 	cur_df = mmsi_group
@@ -225,7 +205,10 @@ def line_it( x ):
 
 	out_row = begin_row.drop( ['Longitude', 'Latitude', 'Time', 'Direction', 'simple_direction'], axis=1 )
 	out_row.index = [0]
-	new_cols_df = pd.DataFrame({ 'lon_begin':lon_begin, 'lon_end':lon_end, 'lat_begin':lat_begin, 'lat_end':lat_end, 'time_begin':time_begin, 'time_end':time_end, 'bear_begin':bearing_begin, 'bear_end':bearing_end, 'dir_begin':direction_begin, 'dir_end':direction_end }, index = out_row.index)
+	new_cols_df = pd.DataFrame({ 'lon_begin':lon_begin, 'lon_end':lon_end, 'lat_begin':lat_begin, 'lat_end':lat_end, \
+								'time_begin':time_begin, 'time_end':time_end, 'bear_begin':bearing_begin, 'bear_end':bearing_end, \
+								'dir_begin':direction_begin, 'dir_end':direction_end }, index = out_row.index)
+
 	out_row = out_row.join( new_cols_df )
 	out_row[ 'geometry' ] = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
 	return out_row
@@ -241,22 +224,21 @@ if __name__ == '__main__':
 	from collections import OrderedDict
 	from pathos import multiprocessing as mp
 	
-	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
 
-	# # parse all the arguments
-	# args = parser.parse_args()
-	# fn = args.fn
-	# output_path = args.output_path
+	# parse all the arguments
+	args = parser.parse_args()
+	fn = args.fn
+	output_path = args.output_path
 
-	# # FOR TESTING REMOVE!
-	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-	fn = l[0]
-	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+	# # FOR DEVELOPMENT REMOVE LATER!
+	# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
+	# fn = l[8]
+	# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 
 	ncpus = 31
-
 	print 'working on: %s' % os.path.basename( fn )
 
 	# make some output filenaming base for outputs
@@ -265,7 +247,7 @@ if __name__ == '__main__':
 	# read in the csv to a PANDAS DataFrame
 	df = pd.read_csv( fn, sep=',' )
 
-	# FIX COLUMNS WITH MIXED TYPES. [15,16,19,20] or [ 'ROT', 'SOG', 'COG', 'Heading' ]
+	# Fix columns with mixed types: [15,16,19,20] or ['ROT','SOG','COG','Heading']
 	# fix ROT
 	if df.ROT.dtype == np.object:
 		if (df.ROT == 'None').any() == True:
@@ -299,129 +281,111 @@ if __name__ == '__main__':
 
 	# run this new version of the function: -- 5.5 mins
 	# returns a new column called clusters which have the groupings...
-	MMSI_grouped = df.groupby( 'MMSI' ).apply( group_voyages ) 
+	MMSI_grouped = df.groupby( 'MMSI' ).apply( group_voyages )
 
-	# parallel example  -- is this faster?
-	# ncpus = 6
-	# if __name__ == '__main__':
-	# 	MMSI_grouped = df.groupby( 'MMSI' )
-	# 	hold = [ j for i,j in MMSI_grouped ]
-	# 	pool = mp.Pool( ncpus )
-	# 	out = pool.map( group_voyages, hold )
-	# 	pool.close()
+	try:
+		# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
+		# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
+		# since we are dropping Voyages with <100 anyhow drop those files now
+		if df.shape[0] > 100: 
+			unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, \
+												columns=[ 'unique', 'count' ] )
 
+			keep_list = unique_counts_df.loc[ unique_counts_df['count'] > 100, 'unique' ]
+			MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ].copy()
 
-	# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
-	# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
-	if df.shape[0] > 100: # since we are dropping Voyages with <100 anyhow
-	# this is the right idea but implemented wrong.  needs fixing later.
-		unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
-		keep_list = unique_counts_df.loc[ unique_counts_df['count'] > 100, 'unique' ] # changed
-		MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ]
+			# # add in the Voyage column -- the unique id of MMSI and unique transect number
+			MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
 
-		# # add in the Voyage column -- the unique id of MMSI and unique transect number
-		MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+			# add in Direction, Distance, and simple_direction fields using the above function
+			voyages_complete = MMSI_grouped_keep.groupby( 'Voyage' ).apply( insert_direction_distance )
 
-		# add in Direction, Distance, and simple_direction fields using the above function
-		voyages_complete = MMSI_grouped_keep.groupby( 'Voyage' ).apply( insert_direction_distance )
-	
-		# if __name__ == '__main__':
-		# 	pool = mp.Pool( 10 )
-		# 	out = pool.map( lambda x: insert_direction_distance( MMSI_grouped_keep.ix[ x[1] ] ), voyages.groups.iteritems() )
-		# 	pool.close()
+			# make an output directory to store the csvs and shapefiles if needed
+			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
+				os.makedirs( os.path.join( output_path, 'csvs' ) )
+			
+			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
+				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
 
+			# write it out to a csv
+			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
+			voyages_complete.to_csv( output_filename, sep=',' )
 
-		# make an output directory to store the csvs and shapefiles if needed
-		if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
-			os.makedirs( os.path.join( output_path, 'csvs' ) )
-		
-		if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
-			os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+			# a hardwired set of column names and dtypes for output shapefile
+			COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
+												('Message_ID', np.int32),
+												('Repeat_indicator', np.int32),
+												('Time', np.object),
+												('Millisecond', np.int32),
+												('Region', np.float32),
+												('Country', np.int32),
+												('Base_station', np.int32),
+												('Vessel_Name', np.float32),
+												('Call_sign', np.float32),
+												('IMO_ee', np.float32),
+												('Ship_Type', np.float32),
+												('Destination', np.float32),
+												('ROT', np.float32),
+												('SOG', np.float32),
+												('Longitude', np.float32),
+												('Latitude', np.float32),
+												('COG', np.float32),
+												('Heading', np.float32),
+												('IMO_ihs', np.int32),
+												('ShipName', np.object),
+												('PortofRegistryCode', np.int32),
+												('ShiptypeLevel2', np.object),
+												('Voyage', np.object),
+												('Direction', np.float32),
+												('simple_direction', np.object)] )
 
-		# write it out to a csv
-		output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-		voyages_complete.to_csv( output_filename, sep=',' )
+			# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
+			voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
 
-		# a hardwired set of column names and dtypes for output shapefile
-		COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
-											('Message_ID', np.int32),
-											('Repeat_indicator', np.int32),
-											('Time', np.object),
-											('Millisecond', np.int32),
-											('Region', np.float32),
-											('Country', np.int32),
-											('Base_station', np.int32),
-											('Vessel_Name', np.float32),
-											('Call_sign', np.float32),
-											('IMO_ee', np.float32),
-											('Ship_Type', np.float32),
-											('Destination', np.float32),
-											('ROT', np.float32),
-											('SOG', np.float32),
-											('Longitude', np.float32),
-											('Latitude', np.float32),
-											('COG', np.float32),
-											('Heading', np.float32),
-											('IMO_ihs', np.int32),
-											('ShipName', np.object),
-											('PortofRegistryCode', np.int32),
-											('ShiptypeLevel2', np.object),
-											('Voyage', np.object),
-											('Direction', np.float32),
-											('simple_direction', np.object)] )
+			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
+			# voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
 
-		# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
-		voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
+			# parallelize point generation -- shapely
+			lonlat = zip( voyages_complete.Longitude.tolist(), voyages_complete.Latitude.tolist() )
 
-		# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
-		# voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
+			# make a pool and use it
+			pool = mp.Pool( ncpus )
+			hold = pool.map( Point, lonlat )
+			pool.close()
 
-		# ALSO PARALLELIZE THIS:
-		# if __name__ == '__main__':
-		lonlat = zip( voyages_complete.Longitude.tolist(), voyages_complete.Latitude.tolist() )
+			voyages_complete[ 'geometry' ] = hold
 
-		# make a pool and use it
-		# if __name__ == '__main__':
-		pool = mp.Pool( ncpus )
-		hold = pool.map( Point, lonlat )
-		pool.close( )
+			# GeoDataFrame it -- GeoPANDAS
+			gdf = gpd.GeoDataFrame( voyages_complete, crs={'init':'epsg:4326'}, geometry='geometry' )
+			
+			# reproject this data into 3338 -- AKALBERS
+			gdf_3338 = gdf.to_crs( epsg=3338 )
 
-		voyages_complete[ 'geometry' ] = hold
+			# serial -- akalbers lon/lat column creation
+			# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
+			# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
 
-		# GeoDataFrame it -- GeoPANDAS
-		gdf = gpd.GeoDataFrame( voyages_complete, crs={'init':'epsg:4326'}, geometry='geometry' )
-		
-		# reproject this data into 3338 -- AKALBERS
-		gdf_3338 = gdf.to_crs( epsg=3338 )
-		# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
-		# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
+			# parallelize the akalber lon/lat column creation
+			pool = mp.Pool( ncpus )
+			ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
+			pool.close()
 
-		# lets do this in parallel to try and get it done faster:
-		# if __name__ == '__main__':
-		pool = mp.Pool( ncpus )
-		ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
-		pool.close()
+			gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
 
-		gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
+			# group the data into Voyages
+			voyages_grouped = gdf_3338.groupby( 'Voyage' )
 
-		# group the data into Voyages
-		voyages_grouped = gdf_3338.groupby( 'Voyage' )
+			gdf_mod = voyages_grouped.apply( line_it ) # remove errant points function here
+			gdf_mod = gdf_mod.reset_index( drop=True )
+			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
 
-		# # TEST 
-		# bad_line = '538005040_1'
-		# bad_line = gdf_3338.ix[voyages_grouped.groups[ bad_line ]]
-		# # END TEST
-
-		gdf_mod = voyages_grouped.apply( line_it ) # remove errant points function here
-		gdf_mod = gdf_mod.reset_index( drop=True )
-		gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
-
-		# make geo and output as a shapefile
-		output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles' )
-		gdf_mod.to_file( output_filename )
-	else:
-		print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
-
+			# make geo and output as a shapefile
+			output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles' )
+			gdf_mod.to_file( output_filename )
+		else:
+			print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
+	except Exception as e:
+		pass
 
 # # # # # # # # # # # # # # # # # # 
 # # # how to run this application:
@@ -444,7 +408,7 @@ if __name__ == '__main__':
 # 			pass
 
 
-
+# # # # # # # # REMOVE FOLLOWING DEVELOPMENT: # # # # # # #
 # # GOOD FILES:
 # Bulk_Carriers_grouped
 # Dry_Cargo_Passenger_grouped
@@ -453,7 +417,7 @@ if __name__ == '__main__':
 # Non_Merchant_Ships_grouped -- QUESTIONABLE...
 
 # # BAD FILES:
-# Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG
-# Non_Ship_Structures_grouped: TypeError: invalid type comparison -- SOG
-# Non_Seagoing_Merchant_Ships_grouped: IndexError: index 0 is out of bounds for axis 0 with size -- MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+# Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
+# Non_Ship_Structures_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
+# Non_Seagoing_Merchant_Ships_grouped: IndexError: index 0 is out of bounds for axis 0 with size -- MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ] [LOOKS OK!]
 
