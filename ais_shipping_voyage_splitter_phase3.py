@@ -233,11 +233,6 @@ if __name__ == '__main__':
 	fn = args.fn
 	output_path = args.output_path
 
-	# # FOR DEVELOPMENT REMOVE LATER!
-	# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-	# fn = l[8]
-	# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
-
 	ncpus = 31
 	print 'working on: %s' % os.path.basename( fn )
 
@@ -343,6 +338,8 @@ if __name__ == '__main__':
 			voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
 
 			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
+
+			# serial --
 			# voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
 
 			# parallelize point generation -- shapely
@@ -375,7 +372,7 @@ if __name__ == '__main__':
 			# group the data into Voyages
 			voyages_grouped = gdf_3338.groupby( 'Voyage' )
 
-			gdf_mod = voyages_grouped.apply( line_it ) # remove errant points function here
+			gdf_mod = voyages_grouped.apply( line_it )
 			gdf_mod = gdf_mod.reset_index( drop=True )
 			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
 
@@ -407,7 +404,7 @@ if __name__ == '__main__':
 # 			print 'ERROR RUN %s: ' % os.path.basename( i )
 # 			pass
 
-
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 # # # # # # # # REMOVE FOLLOWING DEVELOPMENT: # # # # # # #
 # # GOOD FILES:
 # Bulk_Carriers_grouped
@@ -420,4 +417,9 @@ if __name__ == '__main__':
 # Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
 # Non_Ship_Structures_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
 # Non_Seagoing_Merchant_Ships_grouped: IndexError: index 0 is out of bounds for axis 0 with size -- MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ] [LOOKS OK!]
+
+# # FOR DEVELOPMENT REMOVE LATER!
+# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
+# fn = l[8]
+# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 
