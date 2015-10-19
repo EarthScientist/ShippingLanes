@@ -124,8 +124,9 @@ def ais_time_to_datetime( x ):
 def group_voyages( mmsi_group, speed_limit=0.9 ):
 	''' group the data into unique voyages following stationarity and time differences between pings '''
 	cur_df = mmsi_group
+	
 	# # sort by Time since a ship cant go 2 places at the same time.
-	cur_df.loc[ :, 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
+	cur_df[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in cur_df.Time ]
 	cur_df = cur_df.sort_values( by='datetime_tmp' )
 	
 	# time
@@ -140,7 +141,7 @@ def group_voyages( mmsi_group, speed_limit=0.9 ):
 	clusters = ( non_stationary == True ) & ( cur_df['day_breaks'] == False )
 	cur_df.loc[ :, 'clusters' ] = str( cur_df[ 'MMSI' ].tolist()[0] ) + '_' + ( clusters != clusters.shift() ).cumsum().astype( str )
 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
-	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.day_breaks.astype( np.int16 ) # convert Boolean to Integer
+	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.loc[ :, 'day_breaks' ].astype( np.int16 )# convert bool to integer
 	return cluster_groups
 def insert_direction_distance( x ):
 	''' add in the Direction and Distance columns '''
@@ -209,12 +210,13 @@ def line_it( x ):
 	'''
 	# detect and remove outliers based on latitudes:
 	lat_col = 'akalb_lat'
-	x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), lat_col ]
+	x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), : ]
 
+	# get data for first and last rows
 	begin_row = x.head( 1 )
 	end_row = x.tail( 1 )
 	
-	# setup some begin-end values requested
+	# setup some begin-end values requested by funders
 	bearing_begin, bearing_end = ( begin_row[ 'Direction' ].tolist()[0], end_row[ 'Direction' ].tolist()[0] )
 	direction_begin, direction_end = ( begin_row[ 'simple_direction' ].tolist()[0], end_row[ 'simple_direction' ].tolist()[0] )
 	time_begin, time_end = ( begin_row[ 'Time' ].tolist()[0], end_row[ 'Time' ].tolist()[0] )
@@ -225,7 +227,7 @@ def line_it( x ):
 	out_row.index = [0]
 	new_cols_df = pd.DataFrame({ 'lon_begin':lon_begin, 'lon_end':lon_end, 'lat_begin':lat_begin, 'lat_end':lat_end, 'time_begin':time_begin, 'time_end':time_end, 'bear_begin':bearing_begin, 'bear_end':bearing_end, 'dir_begin':direction_begin, 'dir_end':direction_end }, index = out_row.index)
 	out_row = out_row.join( new_cols_df )
-	out_row.loc[ : , 'geometry' ] = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
+	out_row[ 'geometry' ] = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
 	return out_row
 
 if __name__ == '__main__':
@@ -239,19 +241,19 @@ if __name__ == '__main__':
 	from collections import OrderedDict
 	from pathos import multiprocessing as mp
 	
-	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
 
-	# parse all the arguments
-	args = parser.parse_args()
-	fn = args.fn
-	output_path = args.output_path
+	# # parse all the arguments
+	# args = parser.parse_args()
+	# fn = args.fn
+	# output_path = args.output_path
 
 	# # FOR TESTING REMOVE!
-	# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-	# fn = l[0]
-	# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
+	fn = l[0]
+	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 
 	ncpus = 31
 
@@ -296,7 +298,8 @@ if __name__ == '__main__':
 	df = df.loc[ -df.SOG.isnull(), : ]
 
 	# run this new version of the function: -- 5.5 mins
-	MMSI_grouped = df.groupby( 'MMSI' ).apply( lambda x: group_voyages( x ) ) # returns a new column called clusters which have the groupings...
+	# returns a new column called clusters which have the groupings...
+	MMSI_grouped = df.groupby( 'MMSI' ).apply( group_voyages ) 
 
 	# parallel example  -- is this faster?
 	# ncpus = 6
@@ -311,16 +314,22 @@ if __name__ == '__main__':
 	# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
 	# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
 	if df.shape[0] > 100: # since we are dropping Voyages with <100 anyhow
+	# this is the right idea but implemented wrong.  needs fixing later.
 		unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
-		keep_list = unique_counts_df[ unique_counts_df[ 'count' ] > 100 ][ 'unique' ]
+		keep_list = unique_counts_df.loc[ unique_counts_df['count'] > 100, 'unique' ] # changed
 		MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ]
 
 		# # add in the Voyage column -- the unique id of MMSI and unique transect number
-		MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+		MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
 
 		# add in Direction, Distance, and simple_direction fields using the above function
-		voyages = MMSI_grouped_keep.groupby( 'Voyage' )
-		voyages_complete = voyages.apply( insert_direction_distance )
+		voyages_complete = MMSI_grouped_keep.groupby( 'Voyage' ).apply( insert_direction_distance )
+	
+		# if __name__ == '__main__':
+		# 	pool = mp.Pool( 10 )
+		# 	out = pool.map( lambda x: insert_direction_distance( MMSI_grouped_keep.ix[ x[1] ] ), voyages.groups.iteritems() )
+		# 	pool.close()
+
 
 		# make an output directory to store the csvs and shapefiles if needed
 		if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
@@ -372,9 +381,12 @@ if __name__ == '__main__':
 		lonlat = zip( voyages_complete.Longitude.tolist(), voyages_complete.Latitude.tolist() )
 
 		# make a pool and use it
+		# if __name__ == '__main__':
 		pool = mp.Pool( ncpus )
-		voyages_complete[ 'geometry' ] = pool.map( Point, lonlat )
+		hold = pool.map( Point, lonlat )
 		pool.close( )
+
+		voyages_complete[ 'geometry' ] = hold
 
 		# GeoDataFrame it -- GeoPANDAS
 		gdf = gpd.GeoDataFrame( voyages_complete, crs={'init':'epsg:4326'}, geometry='geometry' )
@@ -422,7 +434,7 @@ if __name__ == '__main__':
 # 	# list the files to run and set output path
 # 	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
 # 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
-# 	command_start = 'ais_shipping_voyage_splitter_phase3_b.py -p ' + output_path + ' -fn '
+# 	command_start = 'ais_shipping_voyage_splitter_phase3.py -p ' + output_path + ' -fn '
 
 # 	for i in l:
 # 		try:
