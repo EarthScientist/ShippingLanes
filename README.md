@@ -10,11 +10,10 @@ Coast of Alaska.
 ##### PHASE III:
 
     Improved Voyage slicing and cleanup of voyage line transects. 
-    Adds Directionality (0-360) and in a more simple way:
-    {   'NE':(0.0, 90.0),
-        'SE':(90.0, 180.0),
-        'SW':(180.0, 270.0),
-        'NW':(270.0, 360.0)     }
+    Adds Directionality (0-360) and Cardinality ('N','NE','E','SE','S','SW','W','NW')
+
+    Adds some very simple methods, which appear to have decent results, for removing outliers in Voyages.  
+    This method involves setting thresholds on the median absolute deviation.
 
 These **new** tools are found in [ais_shipping_voyage_splitter_phase3].py.  Code is documented and is still in heavy development so it will be changing rapidly and unexpectedly.
 
