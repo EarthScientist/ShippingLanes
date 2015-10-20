@@ -191,13 +191,8 @@ def line_it( x ):
 	# detect and remove outliers based on latitudes:
 	lat_col = 'akalb_lat'
 	lon_col = 'akalb_lon'
-	# x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), : ]
-	# x = x.loc[ ~is_outlier( x[ lon_col ], thresh=3.5 ), : ]
-
-	# the way to do it 2d is like this (i think)
-	lonlat = np.array( zip( x[ lon_col ].tolist(), x[ lat_col ].tolist() ) )
-	# x = x.loc[ ~is_outlier( lonlat ), : ]
-	x = x.loc[ ~is_outlier( lonlat ), : ]
+	x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), : ] # remove odd lats
+	x = x.loc[ ~is_outlier( x[ lon_col ], thresh=3.5 ), : ] # remove odd lons
 
 	# get data for first and last rows
 	begin_row = x.head( 1 )
@@ -241,11 +236,8 @@ if __name__ == '__main__':
 	fn = args.fn
 	output_path = args.output_path
 
-	# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-	# fn = l[4]
-	# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
-
 	ncpus = 2
+
 	print 'working on: %s' % os.path.basename( fn )
 
 	# make some output filenaming base for outputs
