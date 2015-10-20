@@ -148,7 +148,7 @@ def insert_direction_distance( x ):
 	dist_list.insert( 0, 0 ) # add back in that zero lost at the beginning
 	x.loc[ :, 'Distance' ] = dist_list
 	return x
-def is_outlier( points, thresh=3.5 ):
+def is_outlier( points, thresh=4.0 ):
 	"""
 	Returns a boolean array with True if points are outliers and False 
 	otherwise.
@@ -183,11 +183,6 @@ def is_outlier( points, thresh=3.5 ):
 	med_abs_deviation = np.median(diff)
 	modified_z_score = 0.6745 * diff / med_abs_deviation
 	return modified_z_score > thresh
-
-def repair_outliers( x ):
-
-
-
 def line_it( x ):
 	'''
 	function to be used in a groupby/apply to help generate the needed output line
