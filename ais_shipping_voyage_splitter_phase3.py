@@ -183,6 +183,11 @@ def is_outlier( points, thresh=3.5 ):
 	med_abs_deviation = np.median(diff)
 	modified_z_score = 0.6745 * diff / med_abs_deviation
 	return modified_z_score > thresh
+
+def repair_outliers( x ):
+
+
+
 def line_it( x ):
 	'''
 	function to be used in a groupby/apply to help generate the needed output line
@@ -307,16 +312,6 @@ if __name__ == '__main__':
 			# add in Direction, Distance, and simple_direction fields using the above function
 			voyages_complete = MMSI_grouped_keep.groupby( 'Voyage' ).apply( insert_direction_distance )
 
-			# make an output directory to store the csvs and shapefiles if needed
-			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
-				os.makedirs( os.path.join( output_path, 'csvs' ) )
-			
-			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
-
-			# write it out to a csv
-			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-			voyages_complete.to_csv( output_filename, sep=',' )
 
 			# a hardwired set of column names and dtypes for output shapefile
 			COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
@@ -381,9 +376,21 @@ if __name__ == '__main__':
 
 			gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
 
+			# make an output directory to store the csvs and shapefiles if needed
+			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
+				os.makedirs( os.path.join( output_path, 'csvs' ) )
+			
+			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
+				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+
+			# write it out to a csv
+			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
+			pd.DataFrame( gdf_3338 ).drop( ['geometry'] ).to_csv( output_filename, sep=',' )
+			
 			# group the data into Voyages
 			voyages_grouped = gdf_3338.groupby( 'Voyage' )
 
+			# make lines
 			gdf_mod = voyages_grouped.apply( line_it )
 			gdf_mod = gdf_mod.reset_index( drop=True )
 			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
