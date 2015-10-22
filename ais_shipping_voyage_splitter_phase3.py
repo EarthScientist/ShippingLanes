@@ -123,26 +123,57 @@ def group_voyages( mmsi_group, speed_limit=0.9 ):
 	cluster_groups = cur_df.groupby( 'clusters' ).filter( lambda x: ((x['SOG'] > speed_limit) & (x['day_breaks'] == False)).all() == True )
 	cluster_groups.loc[ :, 'day_breaks' ] = cluster_groups.loc[ :, 'day_breaks' ].astype( np.int16 )# convert bool to integer
 	return cluster_groups
-def insert_direction_distance( x ):
+def cardinal_from_bearing( bearing, simple=True ):
+	'''
+	take a 0-360.0 bearing measurement and convert to 
+	a cardinal direction for ease-of-use
+
+	arguments:
+		bearing = float value describing the bearing to convert
+		simple = True / False, default = True which means that it
+			will return only 4 quadrant based directions
+			[ NE, SE, SW, NW ]
+			* if simple = False:
+			[ 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW' ]
+			is returned
+
+	returns:
+		1 or 2 digit string representation of the cardinality number 
+		based on 
+	'''
+	import numpy as np
+
+	# note that there are 2 North groups since it traverses the 0th degree
+	if simple:
+		direction_dict = {'NE':(-1.0,90.0),'SE':(90.0,180.0),'SW':(180.0,270.0),'NW':(270.0,361.0)}
+	elif simple == False:
+		direction_dict = {'E': (67.5, 112.5), 'SW': (202.5, 247.5), 'NE': (22.5, 67.5),
+						'N1': (337.5, 360.0), 'N2' : (0, 22.5), 'S': (157.5, 202.5),
+						'W': (247.5, 292.5), 'SE': (112.5, 157.5), 'NW': (292.5, 337.5) }
+	else:
+		 raise ValueError( 'argument ::simple:: must be Boolean True/False only' )
+
+	cardinal = [ k for k,v in direction_dict.iteritems() if np.logical_and(v[0] <= bearing, v[1] > bearing) ][ 0 ]
+	if cardinal in [ 'N1', 'N2' ]: # only for simple = False case
+		cardinal = 'N'
+	return cardinal
+def insert_direction_distance( x, lon_col='akalb_lon', lat_col='akalb_lat' ):
 	''' add in the Direction and Distance columns '''
 	from geopy.distance import vincenty
 	import numpy as np
 	import pandas as pd
 
 	''' calculate the direction attribute for each voyage and put it in a Direction column '''
-	lonlats = zip( rolling_window( np.array( x.Longitude), 2 ), rolling_window( np.array( x.Latitude ), 2 ) )
+	lonlats = zip( rolling_window( np.array( x[ lon_col ]), 2 ), rolling_window( np.array( x[ lat_col ] ), 2 ) )
 	bearings = [ calculate_initial_compass_bearing( (lats[0], lons[0]), (lats[1], lons[1]) ) for lons, lats in lonlats ]
 	bearings.insert( 0, bearings[0] ) # add in a duplicate value at the beginning the series since it is a rolling window output
 	# bearings.append( bearings[ len(bearings)-1 ] ) # add in duplicate value at the end of the series 
 	x.loc[ :, 'Direction' ] = bearings
 
-	# simple directionality
-	simple_directions_dict = {'NE':(-1.0,90.0),'SE':(90.0,180.0),'SW':(180.0,270.0),'NW':(270.0,361.0)}
-	x.loc[ :, 'simple_direction' ] = '' # empty col to fill
-	# iterate through the key value pairs and fill it in with the new simple value
-	for k,v in simple_directions_dict.iteritems():
-		l,h = v
-		x.loc[ (x['Direction'] >= l) & (x[ 'Direction' ] < h), 'simple_direction' ] = k
+	# return 2 new cardinality sets in 4 cardinal direction or 8 cardinal directions
+	x.loc[ :, 'cardinal4' ] = [ cardinal_from_bearing( bearing, simple=True ) for bearing in bearings ]
+	x.loc[ :, 'cardinal8' ] = [ cardinal_from_bearing( bearing, simple=False ) for bearing in bearings ]
+
 	# distance
 	dist_list = [ vincenty( (lats[0], lons[0]), (lats[1], lons[1]) ).nautical for lons, lats in lonlats ]
 	dist_list.insert( 0, 0 ) # add back in that zero lost at the beginning
@@ -198,18 +229,20 @@ def line_it( x ):
 	begin_row = x.head( 1 )
 	end_row = x.tail( 1 )
 	
-	# setup some begin-end values requested by funders
+	# setup some begin-end values requested by funders -- HARDWIRED FIELDS HERE!!! CAREFUL!!!
 	bearing_begin, bearing_end = ( begin_row[ 'Direction' ].tolist()[0], end_row[ 'Direction' ].tolist()[0] )
-	direction_begin, direction_end = ( begin_row[ 'simple_direction' ].tolist()[0], end_row[ 'simple_direction' ].tolist()[0] )
+	direction4_begin, direction4_end = ( begin_row[ 'cardinal4' ].tolist()[0], end_row[ 'cardinal4' ].tolist()[0] )
+	direction8_begin, direction8_end = ( begin_row[ 'cardinal8' ].tolist()[0], end_row[ 'cardinal8' ].tolist()[0] )
+	
 	time_begin, time_end = ( begin_row[ 'Time' ].tolist()[0], end_row[ 'Time' ].tolist()[0] )
 	lon_begin, lon_end = ( begin_row[ 'Longitude' ].tolist()[0], end_row[ 'Longitude' ].tolist()[0] )
 	lat_begin, lat_end = ( begin_row[ 'Latitude' ].tolist()[0], end_row[ 'Latitude' ].tolist()[0] )
 
-	out_row = begin_row.drop( ['Longitude', 'Latitude', 'Time', 'Direction', 'simple_direction'], axis=1 )
+	out_row = begin_row.drop( ['Longitude', 'Latitude', 'Time', 'Direction', 'cardinal4', 'cardinal8'], axis=1 )
 	out_row.index = [0]
 	new_cols_df = pd.DataFrame({ 'lon_begin':lon_begin, 'lon_end':lon_end, 'lat_begin':lat_begin, 'lat_end':lat_end, \
 								'time_begin':time_begin, 'time_end':time_end, 'bear_begin':bearing_begin, 'bear_end':bearing_end, \
-								'dir_begin':direction_begin, 'dir_end':direction_end }, index = out_row.index)
+								'dir4_begin':direction4_begin, 'dir4_end':direction4_end, 'dir8_begin':direction8_begin, 'dir8_end':direction8_end }, index = out_row.index)
 
 	out_row = out_row.join( new_cols_df )
 	out_row[ 'geometry' ] = [ LineString( zip(x.akalb_lon.tolist(),x.akalb_lat.tolist()) ) ]
@@ -296,11 +329,49 @@ if __name__ == '__main__':
 			# # add in the Voyage column -- the unique id of MMSI and unique transect number
 			MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
 
-			# add in Direction, Distance, and simple_direction fields using the above function
-			voyages_complete = MMSI_grouped_keep.groupby( 'Voyage' ).apply( insert_direction_distance )
+			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
 
+			# serial --
+			# MMSI_grouped_keep[ 'geometry' ] = MMSI_grouped_keep.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
 
-			# a hardwired set of column names and dtypes for output shapefile
+			# parallelize point generation -- shapely
+			lonlat = zip( MMSI_grouped_keep.Longitude.tolist(), MMSI_grouped_keep.Latitude.tolist() )
+
+			# make a pool and use it -- parallel is working oddly here.
+			pool = mp.Pool( ncpus )
+			hold = pool.map( Point, lonlat )
+			pool.close()
+
+			MMSI_grouped_keep[ 'geometry' ] = hold
+
+			# GeoDataFrame it -- GeoPANDAS
+			gdf = gpd.GeoDataFrame( MMSI_grouped_keep, crs={'init':'epsg:4326'}, geometry='geometry' )
+			
+			# reproject this data into 3338 -- AKALBERS
+			gdf_3338 = gdf.to_crs( epsg=3338 )
+
+			# add in Direction, Distance, and simple_direction fields using the above function 
+			gdf_3338 = gdf_3338.groupby( 'Voyage' ).apply( insert_direction_distance )
+
+			# serial -- akalbers lon/lat column creation
+			# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
+			# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
+
+			# parallelize the akalber lon/lat column creation
+			pool = mp.Pool( ncpus )
+			ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
+			pool.close()
+
+			gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
+
+			# make an output directory to store the csvs and shapefiles if needed
+			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
+				os.makedirs( os.path.join( output_path, 'csvs' ) )
+			
+			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
+				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+		
+			# a hardwired set of column names and dtypes for output csv and shapefile
 			COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
 												('Message_ID', np.int32),
 												('Repeat_indicator', np.int32),
@@ -326,59 +397,23 @@ if __name__ == '__main__':
 												('ShiptypeLevel2', np.object),
 												('Voyage', np.object),
 												('Direction', np.float32),
-												('simple_direction', np.object)] )
+												('cardinal4', np.object),
+												('cardinal8', np.object),
+												('akalb_lon', np.object),
+												('akalb_lat', np.object)] )
 
 			# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
-			voyages_complete = pd.DataFrame( { col:voyages_complete[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
-
-			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
-
-			# serial --
-			# voyages_complete[ 'geometry' ] = voyages_complete.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
-
-			# parallelize point generation -- shapely
-			lonlat = zip( voyages_complete.Longitude.tolist(), voyages_complete.Latitude.tolist() )
-
-			# make a pool and use it
-			pool = mp.Pool( ncpus )
-			hold = pool.map( Point, lonlat )
-			pool.close()
-
-			voyages_complete[ 'geometry' ] = hold
-
-			# GeoDataFrame it -- GeoPANDAS
-			gdf = gpd.GeoDataFrame( voyages_complete, crs={'init':'epsg:4326'}, geometry='geometry' )
-			
-			# reproject this data into 3338 -- AKALBERS
-			gdf_3338 = gdf.to_crs( epsg=3338 )
-
-			# serial -- akalbers lon/lat column creation
-			# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
-			# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
-
-			# parallelize the akalber lon/lat column creation
-			pool = mp.Pool( ncpus )
-			ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
-			pool.close()
-
-			gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
-
-			# make an output directory to store the csvs and shapefiles if needed
-			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
-				os.makedirs( os.path.join( output_path, 'csvs' ) )
-			
-			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+			gdf_3338_csv = pd.DataFrame( { col:gdf_3338[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
 
 			# write it out to a csv
 			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-			pd.DataFrame( gdf_3338 ).drop( ['geometry'] ).to_csv( output_filename, sep=',' )
-			
+			pd.DataFrame( gdf_3338_csv ).to_csv( output_filename, sep=',' )
+
 			# group the data into Voyages
 			voyages_grouped = gdf_3338.groupby( 'Voyage' )
-
+			
 			# make lines
-			gdf_mod = voyages_grouped.apply( line_it )
+			gdf_mod = voyages_grouped.apply( line_it ) # add new fields for output shapefile
 			gdf_mod = gdf_mod.reset_index( drop=True )
 			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
 
@@ -400,7 +435,7 @@ if __name__ == '__main__':
 
 # 	# list the files to run and set output path
 # 	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines_2d'
+# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
 # 	command_start = 'ais_shipping_voyage_splitter_phase3.py -p ' + output_path + ' -fn '
 
 # 	for i in l:
