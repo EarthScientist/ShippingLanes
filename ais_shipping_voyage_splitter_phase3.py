@@ -16,42 +16,6 @@ def rolling_window( a, window ):
 	shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
 	strides = a.strides + (a.strides[-1],)
 	return np.lib.stride_tricks.as_strided( a, shape=shape, strides=strides )
-def calculate_distance( lat1, lon1, lat2, lon2, **kwargs ):
-	'''
-	Calculates the distance between two points given their (lat, lon) co-ordinates.
-	It uses the Spherical Law Of Cosines (http://en.wikipedia.org/wiki/Spherical_law_of_cosines):
-
-	cos(c) = cos(a) * cos(b) + sin(a) * sin(b) * cos(C)                        (1)
-
-	In this case:
-	a = lat1 in radians, b = lat2 in radians, C = (lon2 - lon1) in radians
-	and because the latitude range is  [-π/2, π/2] instead of [0, π]
-	and the longitude range is [-π, π] instead of [0, 2π]
-	(1) transforms into:
-
-	x = cos(c) = sin(a) * sin(b) + cos(a) * cos(b) * cos(C)
-
-	Finally the distance is arccos(x)
-	borrowed from: https://gmigdos.wordpress.com/2010/03/31/
-				python-calculate-the-distance-between-2-points-given-their-coordinates/
-	'''
-	import math
-	if ((lat1 == lat2) and (lon1 == lon2)):
-		return 0
-	try:
-		delta = lon2 - lon1
-		a = math.radians(lat1)
-		b = math.radians(lat2)
-		C = math.radians(delta)
-		x = math.sin(a) * math.sin(b) + math.cos(a) * math.cos(b) * math.cos(C)
-		distance = math.acos(x) # in radians
-		distance  = math.degrees(distance) # in degrees
-		distance  = distance * 60.0 # 60 nautical miles / lat degree
-		# distance = distance * 1852 # conversion to meters
-		distance  = round(distance)
-		return distance;
-	except:
-		return 0
 def calculate_initial_compass_bearing( pointA, pointB ):
 	"""
 	Calculates the bearing between two points.
@@ -157,17 +121,35 @@ def cardinal_from_bearing( bearing, simple=True ):
 	if cardinal in [ 'N1', 'N2' ]: # only for simple = False case
 		cardinal = 'N'
 	return cardinal
-def insert_direction_distance( x, lon_col='akalb_lon', lat_col='akalb_lat' ):
-	''' add in the Direction and Distance columns '''
+def insert_direction_distance( x, lon_col='Longitude', lat_col='Latitude' ):
+	''' 
+	add in the Direction and Distance columns.  We are stuck doing this in the original 
+	WGS84 LatLong space the data are distributed in and the output directions are in 0-360
+	degrees and the distance is in Nautical Miles (nm).
+
+	ARGUMENTS:
+
+	x = is a PANDAS DataFrame with Latitude and Longitude columns in WGS 1984 Ellipsoid (Decimal Degrees)
+	lon_col = string name of the Longitude column to use in the DataFrame - default is 'Longitude'
+	lat_col = string name of the Latitude column to use in the DataFrame - default is 'Latitude'
+
+	RETURNS:
+
+	a modified version of the input data frame (modified in-place, usually by way of a PANDAS GroupBy), 
+	with new columns added for Direction-(0-360), cardinal4-(4 cardinal direction strings), 
+	cardinal8-(8 cardinal direction strings), and Distance-(nautical miles) between a rolling window
+	pair of points.
+
+
+	'''
 	from geopy.distance import vincenty
 	import numpy as np
 	import pandas as pd
 
-	''' calculate the direction attribute for each voyage and put it in a Direction column '''
+	# calculate the direction attribute for each voyage and put it in a Direction column
 	lonlats = zip( rolling_window( np.array( x[ lon_col ]), 2 ), rolling_window( np.array( x[ lat_col ] ), 2 ) )
 	bearings = [ calculate_initial_compass_bearing( (lats[0], lons[0]), (lats[1], lons[1]) ) for lons, lats in lonlats ]
 	bearings.insert( 0, bearings[0] ) # add in a duplicate value at the beginning the series since it is a rolling window output
-	# bearings.append( bearings[ len(bearings)-1 ] ) # add in duplicate value at the end of the series 
 	x.loc[ :, 'Direction' ] = bearings
 
 	# return 2 new cardinality sets in 4 cardinal direction or 8 cardinal directions
@@ -234,6 +216,12 @@ def line_it( x ):
 	direction4_begin, direction4_end = ( begin_row[ 'cardinal4' ].tolist()[0], end_row[ 'cardinal4' ].tolist()[0] )
 	direction8_begin, direction8_end = ( begin_row[ 'cardinal8' ].tolist()[0], end_row[ 'cardinal8' ].tolist()[0] )
 	
+	# # [NEW!!!] calculate between begin/end points bearing -- does this even make sense?
+	# # this is easily built in if we just give it a column to live in below
+	# lonlat_begin = begin_row[ ['Longitude', 'Latitude'] ].tolist()
+	# lonlat_end = end_row[ ['Longitude', 'Latitude'] ].tolist()
+	# beginend_bearings = calculate_initial_compass_bearing( (lonlat_begin[0], lonlat_begin[1]), (lonlat_end[0], lonlat_end[1]) )
+
 	time_begin, time_end = ( begin_row[ 'Time' ].tolist()[0], end_row[ 'Time' ].tolist()[0] )
 	lon_begin, lon_end = ( begin_row[ 'Longitude' ].tolist()[0], end_row[ 'Longitude' ].tolist()[0] )
 	lat_begin, lat_end = ( begin_row[ 'Latitude' ].tolist()[0], end_row[ 'Latitude' ].tolist()[0] )
@@ -270,7 +258,6 @@ if __name__ == '__main__':
 	output_path = args.output_path
 
 	ncpus = 2
-
 	print 'working on: %s' % os.path.basename( fn )
 
 	# make some output filenaming base for outputs
@@ -368,8 +355,11 @@ if __name__ == '__main__':
 			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
 				os.makedirs( os.path.join( output_path, 'csvs' ) )
 			
-			if not os.path.exists( os.path.join( output_path, 'shapefiles' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles' ) )
+			if not os.path.exists( os.path.join( output_path, 'shapefiles','points' ) ):
+				os.makedirs( os.path.join( output_path, 'shapefiles', 'points' ) )
+
+			if not os.path.exists( os.path.join( output_path, 'shapefiles','lines' ) ):
+				os.makedirs( os.path.join( output_path, 'shapefiles', 'lines' ) )
 		
 			# a hardwired set of column names and dtypes for output csv and shapefile
 			COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
@@ -403,11 +393,15 @@ if __name__ == '__main__':
 												('akalb_lat', np.object)] )
 
 			# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
-			gdf_3338_csv = pd.DataFrame( { col:gdf_3338[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } )
+			gdf_3338_csv = gpd.GeoDataFrame( pd.DataFrame( { col:gdf_3338[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } ), crs={'init':'epsg:3338'}, geometry=gdf_3338.geometry )
+			
+			# write it out to a point shapefile
+			output_filename_pts = os.path.join( output_path, 'shapefiles', 'points', output_fn_base+'_points.shp' )
+			gdf_3338_csv.to_file( output_filename_pts )
 
 			# write it out to a csv
 			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-			pd.DataFrame( gdf_3338_csv ).to_csv( output_filename, sep=',' )
+			gdf_3338_csv.to_csv( output_filename, sep=',' )
 
 			# group the data into Voyages
 			voyages_grouped = gdf_3338.groupby( 'Voyage' )
@@ -418,7 +412,7 @@ if __name__ == '__main__':
 			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
 
 			# make geo and output as a shapefile
-			output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles' )
+			output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines' )
 			gdf_mod.to_file( output_filename )
 		else:
 			print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
@@ -435,7 +429,7 @@ if __name__ == '__main__':
 
 # 	# list the files to run and set output path
 # 	l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+# 	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines_v2'
 # 	command_start = 'ais_shipping_voyage_splitter_phase3.py -p ' + output_path + ' -fn '
 
 # 	for i in l:
