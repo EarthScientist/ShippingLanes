@@ -1,12 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+# * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
 # Marine Shipping Project -- Phase III
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# ABSI-LCC SOW Data Processing Script -- ExactEarth Data Dump
+# ABSI-LCC / WCS SOW Data Processing Script -- ExactEarth Data Dump
 # created by: Michael Lindgren (malindgren@alaska.edu)
 #
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
 
 def rolling_window( a, window ):
 	''' 
@@ -439,22 +439,9 @@ if __name__ == '__main__':
 # 			print 'ERROR RUN %s: ' % os.path.basename( i )
 # 			pass
 
+
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 # # # # # # # # REMOVE FOLLOWING DEVELOPMENT: # # # # # # #
-# # GOOD FILES:
-# Bulk_Carriers_grouped
-# Dry_Cargo_Passenger_grouped
-# Fishing_grouped
-# Miscellaneous_grouped
-# Non_Merchant_Ships_grouped -- QUESTIONABLE...
-
-# # BAD FILES:
-# Non_Merchant_Ships_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
-# Non_Ship_Structures_grouped: TypeError: invalid type comparison -- SOG [LOOKS OK!]
-# Non_Seagoing_Merchant_Ships_grouped: IndexError: index 0 is out of bounds for axis 0 with size -- MMSI_grouped_keep.loc[ MMSI_grouped_keep.index, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ] [LOOKS OK!]
-
-# # FOR DEVELOPMENT REMOVE LATER!
 # l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
 # fn = l[4]
 # output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
-
