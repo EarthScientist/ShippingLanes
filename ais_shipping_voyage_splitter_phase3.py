@@ -161,7 +161,7 @@ def insert_direction_distance( x, lon_col='Longitude', lat_col='Latitude' ):
 	dist_list.insert( 0, 0 ) # add back in that zero lost at the beginning
 	x.loc[ :, 'Distance' ] = dist_list
 	return x
-def is_outlier( points, thresh=4.0 ):
+def is_outlier( points, thresh=2.7 ):
 	"""
 	Returns a boolean array with True if points are outliers and False 
 	otherwise.
@@ -196,16 +196,34 @@ def is_outlier( points, thresh=4.0 ):
 	med_abs_deviation = np.median(diff)
 	modified_z_score = 0.6745 * diff / med_abs_deviation
 	return modified_z_score > thresh
+def remove_outliers_v2( df, max_speed=40.0 ):
+	seconds_in_hour = 60.0 * 60.0
+	nm_per_sec = (1/seconds_in_hour) * max_speed #knots
+	value_multiplier = 2
+
+	df.loc[ :, 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in df.Time ]
+	dt_diff = df.datetime_tmp.diff()
+	dt_diff_seconds = pd.Series([ i.total_seconds() for i in dt_diff ])
+	distance = df.Distance.reset_index(drop=True)
+	distance_estimate = ( dt_diff_seconds * nm_per_sec ) * value_multiplier
+	estimate_diff = ((distance_estimate - distance) < 0.0)
+	estimate_diff.index = df.index
+
+	# distance_estimate < distance
+	
+	# np.unique(distance_estimate < distance, return_counts=True)
+	# out = pd.DataFrame({ 'distance':distance, 'estimate':distance_estimate, 'diff_seconds':dt_diff_seconds})
+	return df[ -estimate_diff ]
 def line_it( x ):
 	'''
 	function to be used in a groupby/apply to help generate the needed output line
 	GeoDataFrame.
 	'''
-	# detect and remove outliers based on latitudes:
-	lat_col = 'akalb_lat'
-	lon_col = 'akalb_lon'
-	x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), : ] # remove odd lats
-	x = x.loc[ ~is_outlier( x[ lon_col ], thresh=3.5 ), : ] # remove odd lons
+	# # detect and remove outliers based on latitudes:
+	# lat_col = 'akalb_lat'
+	# lon_col = 'akalb_lon'
+	# x = x.loc[ ~is_outlier( x[ lat_col ], thresh=3.5 ), : ] # remove odd lats
+	# x = x.loc[ ~is_outlier( x[ lon_col ], thresh=3.5 ), : ] # remove odd lons
 
 	# get data for first and last rows
 	begin_row = x.head( 1 )
@@ -248,16 +266,21 @@ if __name__ == '__main__':
 	from collections import OrderedDict
 	from pathos import multiprocessing as mp
 	
-	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
 	
-	# parse all the arguments
-	args = parser.parse_args()
-	fn = args.fn
-	output_path = args.output_path
+	# # parse all the arguments
+	# args = parser.parse_args()
+	# fn = args.fn
+	# output_path = args.output_path
 
-	ncpus = 2
+	# TEMP
+	fn = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/Bulk_Carriers_grouped.csv'
+	output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_NOVEMBER'
+	# END TEMP
+
+	ncpus = 5
 	print 'working on: %s' % os.path.basename( fn )
 
 	# make some output filenaming base for outputs
@@ -317,10 +340,6 @@ if __name__ == '__main__':
 			MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
 
 			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
-
-			# serial --
-			# MMSI_grouped_keep[ 'geometry' ] = MMSI_grouped_keep.apply( lambda x: Point( x.Longitude, x.Latitude ), axis=1 )
-
 			# parallelize point generation -- shapely
 			lonlat = zip( MMSI_grouped_keep.Longitude.tolist(), MMSI_grouped_keep.Latitude.tolist() )
 
@@ -340,9 +359,8 @@ if __name__ == '__main__':
 			# add in Direction, Distance, and simple_direction fields using the above function 
 			gdf_3338 = gdf_3338.groupby( 'Voyage' ).apply( insert_direction_distance )
 
-			# serial -- akalbers lon/lat column creation
-			# ak_lonlat = gdf_3338.geometry.apply( lambda x: {'akalb_lon':x.x, 'akalb_lat':x.y} )
-			# ak_lonlat = pd.DataFrame( ak_lonlat.tolist() )
+			# remove the outliers from this dataset:
+			gdf_3338 = gdf_3338.apply( lambda x: remove_outliers_v2( x, max_speed=40.0 ) )
 
 			# parallelize the akalber lon/lat column creation
 			pool = mp.Pool( ncpus )
@@ -387,13 +405,15 @@ if __name__ == '__main__':
 												('ShiptypeLevel2', np.object),
 												('Voyage', np.object),
 												('Direction', np.float32),
+												('Distance', np.float32),
 												('cardinal4', np.object),
 												('cardinal8', np.object),
 												('akalb_lon', np.object),
 												('akalb_lat', np.object)] )
 
 			# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
-			gdf_3338_csv = gpd.GeoDataFrame( pd.DataFrame( { col:gdf_3338[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } ), crs={'init':'epsg:3338'}, geometry=gdf_3338.geometry )
+			gdf_3338_csv = gpd.GeoDataFrame( pd.DataFrame( { col:gdf_3338[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } ), \
+												crs={'init':'epsg:3338'}, geometry=gdf_3338.geometry )
 			
 			# write it out to a point shapefile
 			output_filename_pts = os.path.join( output_path, 'shapefiles', 'points', output_fn_base+'_points.shp' )
@@ -404,7 +424,7 @@ if __name__ == '__main__':
 			gdf_3338_csv.to_csv( output_filename, sep=',' )
 
 			# group the data into Voyages
-			voyages_grouped = gdf_3338.groupby( 'Voyage' )
+			voyages_grouped = gdf_3338_csv.groupby( 'Voyage' ) # changed from gdf_3338
 			
 			# make lines
 			gdf_mod = voyages_grouped.apply( line_it ) # add new fields for output shapefile
@@ -445,3 +465,75 @@ if __name__ == '__main__':
 # l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
 # fn = l[4]
 # output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
+
+
+# fn = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/Bulk_Carriers_grouped.csv'
+# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_NOVEMBER'
+
+
+# tmp = gdf_3338_csv[ gdf_3338.Voyage == error_bc_voyage ]
+# tmp[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in tmp.Time ]
+
+
+# from GOOGLE
+# one nautical mile
+# The knot (/nɒt/) is a unit of speed equal to one nautical mile (1.852 km) 
+# per hour, approximately 1.151 mph. The ISO Standard symbol for the knot is kn.
+
+# 1.51 mph per minute = 0.025 miles/minute
+# 0.025 miles/minute = 40.23 meters/minute
+
+# EXAMPLE
+# knots = 10.0
+# meter_minute_1knot = 321
+# ping_interval_seconds = 30
+# meters_second  = 321/60.0
+# meters_minute = knots * meter_minute_1knot
+
+# meters_minute < speed_of_ship
+
+# 1 *.60
+
+
+
+# 1 knot = 1
+# 321.869
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+# FINAL
+# get a single voyage -- in this case the error one
+# error_bc_voyage = '636092098_5'
+# tmp = gdf_3338_csv[ gdf_3338_csv.Voyage == error_bc_voyage ]
+# # add back in the time as a pandas dt object
+# tmp[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in tmp.Time ]
+
+# # make a new df with the diffs in time and distance traveled
+# tmp_diff = pd.DataFrame({'time_diff':tmp.datetime_tmp.diff(), 'dist_diff':tmp.Distance.diff() })
+
+# # select a testing row
+# td = tmp_diff.time_diff.iloc[10]
+# dd = tmp_diff.dist_diff.iloc[10]
+# dt = tmp.Distance.iloc[10] # distance traveled
+
+# # get the timediff in total seconds:
+# total_diff_seconds = td.total_seconds()
+
+# # lets say the bulk carriers run at 10 knots
+# knots = 10.0
+# seconds_in_hour = 60.0 * 60.0 
+# nm_per_sec = (1/seconds_in_hour) * knots
+
+# # calculate the final value of how far it could have traveled
+# final_val = total_diff_seconds * nm_per_sec
+# allowed_calc_error = 1.5
+
+# if (final_val * allowed_calc_error) < dt:
+# 	print False
+# else:
+# 	print True
+
+
+
+# END FINAL
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
