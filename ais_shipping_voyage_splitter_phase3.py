@@ -232,8 +232,6 @@ def remove_outliers_v2( df, max_speed=40.0 ):
 	distance_inv = distance[::-1]
 	distance_estimate_inv = ( dt_diff_seconds_inv * nm_per_sec )
 	estimate_diff_inv = -((distance_estimate_inv - distance_inv) < 0.0)
-	
-
 
 	estimate_diff.index = df.index
 	df = df.loc[ estimate_diff, : ]
@@ -319,24 +317,20 @@ if __name__ == '__main__':
 	from shapely.geometry import Point, LineString
 	from collections import OrderedDict
 	from pathos.mp_map import mp_map
-	# from pathos.pp_map import pp_map
-	# from pathos import multiprocessing as mp
-	# from dask import dataframe as dd
+	from pathos.pp_map import pp_map
+	from pathos import multiprocessing as mp
+	from dask import dataframe as dd
 	
-	# parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
-	# parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
-	# parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
-	# parser.add_argument( "-lfn", "--land_fn", action='store', dest='land_fn', type=str, help='path to land filename to be used for finding non-compliant voyages' )
+	parser = argparse.ArgumentParser( description='program to add Voyage and Direction fields to the AIS Data' )
+	parser.add_argument( "-p", "--output_path", action='store', dest='output_path', type=str, help='path to output directory' )
+	parser.add_argument( "-fn", "--fn", action='store', dest='fn', type=str, help='path to input filename to run' )
+	parser.add_argument( "-lfn", "--land_fn", action='store', dest='land_fn', type=str, help='path to land filename to be used for finding non-compliant voyages' )
 	
-	# # parse all the arguments
-	# args = parser.parse_args()
-	# fn = args.fn
-	# output_path = args.output_path
-	# land_fn = args.land_fn
-
-	fn = '/atlas_scratch/malindgren/ShippingLanes_PhaseIII/Thu_Sep_4_2014_121625/csv/grouped/Tankers_grouped.csv'
-	output_path = '/atlas_scratch/malindgren/ShippingLanes_PhaseIII/Output_Data_NOVEMBER'
-	land_fn = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Ancillary_Data/shoreline_shapefile/Bering_Chukchi_Shoreline_3338_aoi.shp'
+	# parse all the arguments
+	args = parser.parse_args()
+	fn = args.fn
+	output_path = args.output_path
+	land_fn = args.land_fn
 
 	ncpus = 32
 	print 'working on: %s' % os.path.basename( fn )
@@ -383,181 +377,198 @@ if __name__ == '__main__':
 	# returns a new column called clusters which groups to voyages
 	MMSI_grouped = df.groupby( 'MMSI' ).apply( group_voyages )
 
-	try:
-		# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
-		# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
-		# since we are dropping Voyages with <100 anyhow drop those files now
-		if df.shape[0] > 100:
-			unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
+	# lets dig into the data a bit: we are going to keep only transects with > 100 pingbacks since that seems like a fairly short trip @ ~30 sec intervals
+	# this could transform into something that looks at the intervals between each timestep and decides whether to drop it. instead of ping counts
+	# since we are dropping Voyages with <100 anyhow drop those files now
+	if df.shape[0] > 100:
+		unique_counts_df = pd.DataFrame( np.array( np.unique( MMSI_grouped.clusters, return_counts=True ) ).T, columns=[ 'unique', 'count' ] )
 
-			keep_list = unique_counts_df.loc[ unique_counts_df['count'] > 100, 'unique' ]
-			MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ].copy()
+		keep_list = unique_counts_df.loc[ unique_counts_df['count'] > 100, 'unique' ]
+		MMSI_grouped_keep = MMSI_grouped[ MMSI_grouped.clusters.isin( keep_list ) ].copy()
 
-			def fix_voyage_id( MMSI_group_df ):
-				# grouped = MMSI_group_df.groupby( 'clusters' )
-				unique_vals = MMSI_group_df.clusters.unique()
-				MMSI = unique_vals[0].split( '_' )[0]
-				unique_vals_count = len( unique_vals )
-				for unique, new_val in zip( unique_vals, range(unique_vals_count) ):
-					new_val = new_val+1
-					MMSI_group_df.loc[ MMSI_group_df.clusters == unique, 'Voyage' ] = MMSI_group_df[ MMSI_group_df.clusters == unique ].clusters.apply( lambda x: x.split( '_' )[0] + '_' + str(new_val) )
-				return MMSI_group_df
+		def fix_voyage_id( MMSI_group_df ):
+			# grouped = MMSI_group_df.groupby( 'clusters' )
+			unique_vals = MMSI_group_df.clusters.unique()
+			MMSI = unique_vals[0].split( '_' )[0]
+			unique_vals_count = len( unique_vals )
+			for unique, new_val in zip( unique_vals, range(unique_vals_count) ):
+				new_val = new_val+1
+				MMSI_group_df.loc[ MMSI_group_df.clusters == unique, 'Voyage' ] = MMSI_group_df[ MMSI_group_df.clusters == unique ].clusters.apply( lambda x: x.split( '_' )[0] + '_' + str(new_val) )
+			return MMSI_group_df
 
-			# # add in the Voyage column -- the unique id of MMSI and unique transect number
-			new_groups = MMSI_grouped_keep.clusters.apply( lambda x: x.split( '_' )[0] ).tolist()
-			MMSI_grouped_keep = MMSI_grouped_keep.groupby( new_groups ).apply( fix_voyage_id )
+		# # add in the Voyage column -- the unique id of MMSI and unique transect number
+		new_groups = MMSI_grouped_keep.clusters.apply( lambda x: x.split( '_' )[0] ).tolist()
+		MMSI_grouped_keep = MMSI_grouped_keep.groupby( new_groups ).apply( fix_voyage_id )
 
-			# MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
-			# voyage_group_names = grouped.groups.keys()
+		# MMSI_grouped_keep.loc[ :, 'Voyage' ] = MMSI_grouped_keep.loc[ :, 'clusters' ]
+		# voyage_group_names = grouped.groups.keys()
 
-			# run the voyage cleaner function on the grouped voyage data frames
-			# gdf_3338 = MMSI_grouped_keep.groupby( 'Voyage' ).apply( clean_grouped_voyages( df ) )
-			# parallelize it 
-			MMSI_grouped_voyages = pd.Series([ j.copy() for i,j in MMSI_grouped_keep.groupby( 'Voyage' ) ])
-			
-			del MMSI_grouped_keep, df # cleanup
+		# run the voyage cleaner function on the grouped voyage data frames
+		# gdf_3338 = MMSI_grouped_keep.groupby( 'Voyage' ).apply( clean_grouped_voyages( df ) )
+		# parallelize it 
+		MMSI_grouped_voyages = pd.Series([ j.copy() for i,j in MMSI_grouped_keep.groupby( 'Voyage' ) ])
+		
+		del MMSI_grouped_keep, df # cleanup
 
-			print ('  running voyage cleaner')
+		print ('  running voyage cleaner')
+		if len( MMSI_grouped_voyages ) >= 2000:
 			splitter = np.array_split( range( len( MMSI_grouped_voyages ) ), int( len( MMSI_grouped_voyages ) / 1000 ) )
 			out = [ mp_map( clean_grouped_voyages, sequence=MMSI_grouped_voyages[ i ], nproc=ncpus ) for i in splitter ]
-
-			del MMSI_grouped_voyages # cleanup
-			
-			# unlist and concat the data 
+			# unlist
 			out = [ j for i in out for j in i ]
-			df = pd.concat( out )
-			
-			# run the intersect test -- THIS IS BROKEN!
-			MMSI_grouped_goodbad = pd.Series([ j.copy() for i,j in df.groupby( 'Voyage' ) ])
-			break_goodbad_partial = partial( break_goodbad, land=land ) # partial function build
-			
+		else:
+			out = mp_map( clean_grouped_voyages, sequence=MMSI_grouped_voyages, nproc=ncpus )
+
+		df = pd.concat( ( i for i in out if i.shape[0] > 0 ) )
+
+		del MMSI_grouped_voyages # cleanup
+
+		# run the intersect testing
+		MMSI_grouped_goodbad = pd.Series([ j.copy() for i,j in df.groupby( 'Voyage' ) ])
+		break_goodbad_partial = partial( break_goodbad, land=land ) # partial function build
+		
+		if len( MMSI_grouped_goodbad ) >= 2000:
 			splitter = np.array_split( range( len( MMSI_grouped_goodbad ) ), int( len( MMSI_grouped_goodbad ) / 1000 ) )
-			
 			intersect_test = [ mp_map( break_goodbad_partial, sequence=MMSI_grouped_goodbad[ i ], nproc=ncpus ) for i in splitter ]
 			intersect_test = [ j for i in intersect_test for j in i ] # unlist it
+		else:
+			intersect_test = mp_map( break_goodbad_partial, sequence=MMSI_grouped_goodbad, nproc=ncpus )
 
-			# # # # # 
-			del out # cleanup
+		# # # # # 
+		del out # cleanup
 
-			# make an output directory to store the csvs and shapefiles if needed
-			if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
-				os.makedirs( os.path.join( output_path, 'csvs' ) )
-			
-			if not os.path.exists( os.path.join( output_path, 'shapefiles','points' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles', 'points' ) )
+		# make an output directory to store the csvs and shapefiles if needed
+		if not os.path.exists( os.path.join( output_path, 'csvs' ) ):
+			os.makedirs( os.path.join( output_path, 'csvs' ) )
+		
+		if not os.path.exists( os.path.join( output_path, 'shapefiles','points' ) ):
+			os.makedirs( os.path.join( output_path, 'shapefiles', 'points' ) )
 
-			if not os.path.exists( os.path.join( output_path, 'shapefiles','lines' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles', 'lines' ) )
-			
-			# set up 'bad' voyage directories
-			if not os.path.exists( os.path.join( output_path, 'csvs', 'bad' ) ):
-				os.makedirs( os.path.join( output_path, 'csvs', 'bad' ) )
-			
-			if not os.path.exists( os.path.join( output_path, 'shapefiles','points', 'bad' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles', 'points', 'bad' ) )
+		if not os.path.exists( os.path.join( output_path, 'shapefiles','lines' ) ):
+			os.makedirs( os.path.join( output_path, 'shapefiles', 'lines' ) )
+		
+		# set up 'bad' voyage directories
+		if not os.path.exists( os.path.join( output_path, 'csvs', 'bad' ) ):
+			os.makedirs( os.path.join( output_path, 'csvs', 'bad' ) )
+		
+		if not os.path.exists( os.path.join( output_path, 'shapefiles','points', 'bad' ) ):
+			os.makedirs( os.path.join( output_path, 'shapefiles', 'points', 'bad' ) )
 
-			if not os.path.exists( os.path.join( output_path, 'shapefiles','lines', 'bad' ) ):
-				os.makedirs( os.path.join( output_path, 'shapefiles', 'lines', 'bad' ) )
+		if not os.path.exists( os.path.join( output_path, 'shapefiles','lines', 'bad' ) ):
+			os.makedirs( os.path.join( output_path, 'shapefiles', 'lines', 'bad' ) )
 
-			# a hardwired set of column names and dtypes for output csv and shapefile
-			COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
-												('Message_ID', np.int32),
-												('Repeat_indicator', np.int32),
-												('Time', np.object),
-												('Millisecond', np.int32),
-												('Region', np.float32),
-												('Country', np.int32),
-												('Base_station', np.int32),
-												('Vessel_Name', np.float32),
-												('Call_sign', np.float32),
-												('IMO_ee', np.float32),
-												('Ship_Type', np.float32),
-												('Destination', np.float32),
-												('ROT', np.float32),
-												('SOG', np.float32),
-												('Longitude', np.float32),
-												('Latitude', np.float32),
-												('COG', np.float32),
-												('Heading', np.float32),
-												('IMO_ihs', np.int32),
-												('ShipName', np.object),
-												('PortofRegistryCode', np.int32),
-												('ShiptypeLevel2', np.object),
-												('Voyage', np.object),
-												('Direction', np.float32),
-												('cardinal4', np.object),
-												('cardinal8', np.object),
-												('akalb_lon', np.object),
-												('akalb_lat', np.object)] )
+		# a hardwired set of column names and dtypes for output csv and shapefile
+		COLNAMES_DTYPES_DICT = OrderedDict([('MMSI', np.int32),
+											('Message_ID', np.int32),
+											('Repeat_indicator', np.int32),
+											('Time', np.object),
+											('Millisecond', np.int32),
+											('Region', np.float32),
+											('Country', np.int32),
+											('Base_station', np.int32),
+											('Vessel_Name', np.float32),
+											('Call_sign', np.float32),
+											('IMO_ee', np.float32),
+											('Ship_Type', np.float32),
+											('Destination', np.float32),
+											('ROT', np.float32),
+											('SOG', np.float32),
+											('Longitude', np.float32),
+											('Latitude', np.float32),
+											('COG', np.float32),
+											('Heading', np.float32),
+											('IMO_ihs', np.int32),
+											('ShipName', np.object),
+											('PortofRegistryCode', np.int32),
+											('ShiptypeLevel2', np.object),
+											('Voyage', np.object),
+											('Direction', np.float32),
+											('cardinal4', np.object),
+											('cardinal8', np.object),
+											('akalb_lon', np.object),
+											('akalb_lat', np.object)] )
 
-			# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
-			gdf_3338_csv = gpd.GeoDataFrame( pd.DataFrame( { col:df[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } ), \
-												crs={'init':'epsg:3338'}, geometry=df.geometry )
+		# this has an issue with converting DTYPES since they are of mixed types...  lets try to fix it above...
+		gdf_3338_csv = gpd.GeoDataFrame( pd.DataFrame( { col:df[ col ].astype( dtype ) for col, dtype in COLNAMES_DTYPES_DICT.iteritems() } ), \
+											crs={'init':'epsg:3338'}, geometry=df.geometry )
 
-			gdf_3338_csv_grouped = pd.Series( [ j for i, j in gdf_3338_csv.groupby( 'Voyage' ) ] )
+		gdf_3338_csv_grouped = pd.Series( [ j for i, j in gdf_3338_csv.groupby( 'Voyage' ) ] )
 
-			# use the intersects test we calculated above to break out good and bad dataframes
-			intersect_test = pd.Series( intersect_test )
-			gdf_3338_csv = gpd.GeoDataFrame( pd.concat( gdf_3338_csv_grouped[ -intersect_test ].tolist() ), crs={'init':'epsg:3338'}, geometry='geometry' ) # good voyages
-			gdf_3338_csv_bad = gpd.GeoDataFrame( pd.concat( gdf_3338_csv_grouped[ intersect_test ].tolist() ), crs={'init':'epsg:3338'}, geometry='geometry' ) # offending voyages
+		# use the intersects test we calculated above to break out good and bad dataframes
+		intersect_test = pd.Series( intersect_test )
 
-			# write it out to a point shapefile
-			print( '  writing point shapefiles' )
-			output_filename_pts = os.path.join( output_path, 'shapefiles', 'points', output_fn_base+'_points.shp' )
-			gdf_3338_csv.to_file( output_filename_pts )
-			# bad
+		if False in intersect_test: # no intersection with polygons
+			gdf_3338_csv = gpd.GeoDataFrame( pd.concat( gdf_3338_csv_grouped[ -intersect_test ].tolist() ), crs={'init':'epsg:3338'}, geometry='geometry' )
+
+		if True in intersect_test.tolist(): # intersection with polygons aka 'bad'
+			gdf_3338_csv_bad = gpd.GeoDataFrame( pd.concat( gdf_3338_csv_grouped[ intersect_test ].tolist() ), crs={'init':'epsg:3338'}, geometry='geometry' )
+		else:
+			gdf_3338_csv_bad = None
+
+		# write it out to a point shapefile
+		print( '  writing point shapefiles' )
+		output_filename_pts = os.path.join( output_path, 'shapefiles', 'points', output_fn_base+'_points.shp' )
+		gdf_3338_csv.to_file( output_filename_pts )
+		
+		# bad
+		if gdf_3338_csv_bad is not None:
 			output_filename_pts = os.path.join( output_path, 'shapefiles', 'points', 'bad', output_fn_base+'_points.shp' )
 			gdf_3338_csv_bad.to_file( output_filename_pts )
 
-			# write it out to a csv
-			print( '  writing point csvs' )
-			output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
-			gdf_3338_csv.to_csv( output_filename, sep=',' )
+		# write it out to a csv
+		print( '  writing point csvs' )
+		output_filename = os.path.join( output_path, 'csvs', output_fn_base+'.csv' )
+		gdf_3338_csv.drop( 'geometry', 1 ).to_csv( output_filename, sep=',' )
+		# group the data into Voyages
+		voyages_grouped = gdf_3338_csv.groupby( 'Voyage' )
 
+		# bad
+		if gdf_3338_csv_bad is not None:
 			output_filename = os.path.join( output_path, 'csvs', 'bad' , output_fn_base+'.csv' )
 			gdf_3338_csv_bad.drop( 'geometry', 1 ).to_csv( output_filename )
-
-			# group the data into Voyages
-			voyages_grouped = gdf_3338_csv.groupby( 'Voyage' )
 			voyages_grouped_bad = gdf_3338_csv_bad.groupby( 'Voyage' )
 			
-			# make lines
-			gdf_mod = voyages_grouped.apply( line_it ) # add new fields for output shapefile
-			gdf_mod_bad = voyages_grouped_bad.apply( line_it ) # add new fields for output shapefile
-			# del gdf_3338_csv
-			gdf_mod = gdf_mod.reset_index( drop=True )
-			gdf_mod_bad = gdf_mod_bad.reset_index( drop=True )
+		print( '  writing lines shapefiles' )
+
+		# make lines
+		gdf_mod = voyages_grouped.apply( line_it ) # add new fields for output shapefile
+		# del gdf_3338_csv
+		gdf_mod = gdf_mod.reset_index( drop=True )
+		gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
+
+		output_filename = os.path.join( output_path, 'shapefiles', 'lines', output_fn_base+'.shp' )
+		if isinstance( gdf_mod, gpd.GeoDataFrame ) and isinstance( gdf_mod.geometry, gpd.GeoSeries ):
+			# make geo and output as a shapefile
+			# output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines' )
+			gdf_mod.to_file( output_filename )
+		else:
+			# output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines' )
+			gdf_mod.geometry = gpd.GeoSeries( gdf_mod.geometry )
 			gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
+			gdf_mod.to_file( output_filename )
+			print( '  check lines GeoDataFrame' )
+
+		# bad
+		if gdf_3338_csv_bad is not None:
+			gdf_mod_bad = voyages_grouped_bad.apply( line_it ) # add new fields for output shapefile
+			gdf_mod_bad = gdf_mod_bad.reset_index( drop=True )
 			gdf_mod_bad = gpd.GeoDataFrame( gdf_mod_bad, crs={'init':'epsg:3338'}, geometry='geometry' )
 
-			if isinstance( gdf_mod, gpd.GeoDataFrame ) and isinstance( gdf_mod.geometry, gpd.GeoSeries ):
-				# make geo and output as a shapefile
-				output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines' )
-				gdf_mod.to_file( output_filename )
-			else:
-				output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines' )
-				gdf_mod.geometry = gpd.GeoSeries( gdf_mod.geometry )
-				gdf_mod = gpd.GeoDataFrame( gdf_mod, crs={'init':'epsg:3338'}, geometry='geometry' )
-				gdf_mod.to_file( output_filename )
-				print( '  check lines GeoDataFrame' )
-
+			output_filename = os.path.join( output_path, 'shapefiles', 'lines', 'bad', output_fn_base+'.shp' )
 			# bad line output
 			if isinstance( gdf_mod, gpd.GeoDataFrame ) and isinstance( gdf_mod.geometry, gpd.GeoSeries ):
 				# make geo and output as a shapefile
-				output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines/bad' )
+				# output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines/bad' )
 				gdf_mod_bad.to_file( output_filename )
 			else:
-				output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines/bad' )
+				# output_filename = output_filename.replace( '.csv', '.shp' ).replace( 'csvs', 'shapefiles/lines/bad' )
 				gdf_mod_bad.geometry = gpd.GeoSeries( gdf_mod_bad.geometry )
 				gdf_mod_bad = gpd.GeoDataFrame( gdf_mod_bad, crs={'init':'epsg:3338'}, geometry='geometry' )
-				gdf_mod_bad.to_file( output_filename )	
+				gdf_mod_bad.to_file( output_filename )
 				print( '  check lines bad GeoDataFrame' )
+	else:
+		print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
 
-		else:
-			print 'Unable to Generate Lines for : %s ' % os.path.basename( fn )
-	except Exception as e:
-		print e
-		pass
 
 # # # # # # # # # # # # # # # # # # 
 # # # how to run this application:
@@ -576,127 +587,7 @@ if __name__ == '__main__':
 
 # 	for i in l:
 # 		try:
-#			os.system( 'ipython -c "%run ' + command_start + i + ' -lfn ' + land_fn + '"')
+# 			os.system( 'ipython -c "%run ' + command_start + i + ' -lfn ' + land_fn + '"')
 # 		except:
 # 			print 'ERROR RUN %s: ' % os.path.basename( i )
 # 			pass
-
-
-
-# # # # # # #
-			# pool = mp.Pool( ncpus )
-			# gdf_3338 = pd.concat( pool.map( lambda x: clean_grouped_voyages( x ), MMSI_grouped_voyages ) )
-			# pool.close()
-
-			# make Point()s and add to a field named 'geometry' and Make GeoDataFrame
-			# # parallelize point generation -- shapely
-			# lonlat = zip( MMSI_grouped_keep.Longitude.tolist(), MMSI_grouped_keep.Latitude.tolist() )
-
-			# # make a pool and use it -- parallel is working oddly here.
-			# pool = mp.Pool( ncpus )
-			# hold = pool.map( Point, lonlat )
-			# pool.close()
-
-			# MMSI_grouped_keep[ 'geometry' ] = hold
-
-			# # GeoDataFrame it -- GeoPANDAS
-			# gdf = gpd.GeoDataFrame( MMSI_grouped_keep, crs={'init':'epsg:4326'}, geometry='geometry' )
-			
-			# # reproject this data into 3338 -- AKALBERS
-			# gdf_3338 = gdf.to_crs( epsg=3338 )
-
-			# # add in Direction, Distance, and simple_direction fields using the above function 
-			# gdf_3338 = gdf_3338.groupby( 'Voyage' ).apply( insert_direction_distance )
-
-			# # remove the outliers from this dataset:
-			# gdf_3338_grouped = [ j for i,j in gdf_3338.groupby( 'Voyage' ) ]
-			# pool = mp.Pool( ncpus )
-			# gdf_3338 = gpd.GeoDataFrame( pool.map( lambda x: remove_outliers_v2( x, max_speed=40.0 ), gdf_3338_grouped ), crs={'init':'epsg:3338'}, geometry='geometry' )
-			# pool.close()
-
-			# # parallelize the akalber lon/lat column creation
-			# pool = mp.Pool( ncpus )
-			# ak_lonlat = pd.DataFrame( pool.map( lambda x: { 'akalb_lon':x.x, 'akalb_lat':x.y }, gdf_3338.geometry.tolist() ) )
-			# pool.close()
-
-			# gdf_3338 = gdf_3338.reset_index( drop=True ).join( ak_lonlat )
-
-# # # # # # #
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# # # # # # # # REMOVE FOLLOWING DEVELOPMENT: # # # # # # #
-# l = glob.glob( '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/*.csv' )
-# fn = l[4]
-# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_fixlines'
-
-
-# fn = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Output_Data/Thu_Sep_4_2014_121625/csv/grouped/Bulk_Carriers_grouped.csv'
-# output_path = '/workspace/Shared/Tech_Projects/Marine_shipping/project_data/Phase_III/Output_Data_NOVEMBER'
-
-
-# tmp = gdf_3338_csv[ gdf_3338.Voyage == error_bc_voyage ]
-# tmp[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in tmp.Time ]
-
-
-# from GOOGLE
-# one nautical mile
-# The knot (/nɒt/) is a unit of speed equal to one nautical mile (1.852 km) 
-# per hour, approximately 1.151 mph. The ISO Standard symbol for the knot is kn.
-
-# 1.51 mph per minute = 0.025 miles/minute
-# 0.025 miles/minute = 40.23 meters/minute
-
-# EXAMPLE
-# knots = 10.0
-# meter_minute_1knot = 321
-# ping_interval_seconds = 30
-# meters_second  = 321/60.0
-# meters_minute = knots * meter_minute_1knot
-
-# meters_minute < speed_of_ship
-
-# 1 *.60
-
-
-
-# 1 knot = 1
-# 321.869
-
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-# FINAL
-# get a single voyage -- in this case the error one
-# error_bc_voyage = '636092098_5'
-# tmp = gdf_3338_csv[ gdf_3338_csv.Voyage == error_bc_voyage ]
-# # add back in the time as a pandas dt object
-# tmp[ 'datetime_tmp' ] = [ ais_time_to_datetime( i ) for i in tmp.Time ]
-
-# # make a new df with the diffs in time and distance traveled
-# tmp_diff = pd.DataFrame({'time_diff':tmp.datetime_tmp.diff(), 'dist_diff':tmp.Distance.diff() })
-
-# # select a testing row
-# td = tmp_diff.time_diff.iloc[10]
-# dd = tmp_diff.dist_diff.iloc[10]
-# dt = tmp.Distance.iloc[10] # distance traveled
-
-# # get the timediff in total seconds:
-# total_diff_seconds = td.total_seconds()
-
-# # lets say the bulk carriers run at 10 knots
-# knots = 10.0
-# seconds_in_hour = 60.0 * 60.0 
-# nm_per_sec = (1/seconds_in_hour) * knots
-
-# # calculate the final value of how far it could have traveled
-# final_val = total_diff_seconds * nm_per_sec
-# allowed_calc_error = 1.5
-
-# if (final_val * allowed_calc_error) < dt:
-# 	print False
-# else:
-# 	print True
-
-
-
-# END FINAL
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-
