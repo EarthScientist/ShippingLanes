@@ -257,7 +257,7 @@ def line_it( x ):
 	direction4_begin, direction4_end = ( begin_row[ 'cardinal4' ].tolist()[0], end_row[ 'cardinal4' ].tolist()[0] )
 	direction8_begin, direction8_end = ( begin_row[ 'cardinal8' ].tolist()[0], end_row[ 'cardinal8' ].tolist()[0] )
 	
-	# # [NEW!!!] calculate between begin/end points bearing -- does this even make sense?
+	# # calculate between begin/end points bearing -- does this even make sense?
 	# # this is easily built in if we just give it a column to live in below
 	# lonlat_begin = begin_row[ ['Longitude', 'Latitude'] ].tolist()
 	# lonlat_end = end_row[ ['Longitude', 'Latitude'] ].tolist()
@@ -285,7 +285,6 @@ def clean_grouped_voyages( df ):
 	# add in Direction, Distance, and simple_direction fields using the above function
 	df = insert_direction_distance( df )
 	# remove outliers 
-	# THIS NEEDS TO BE A RECURSION!
 	df = remove_outliers_v2( df, max_speed=40.0 )
 	# make a geopandas GeoDataFrame
 	gdf = gpd.GeoDataFrame( df, crs={'init':'epsg:4326'}, geometry='geometry' )
