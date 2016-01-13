@@ -21,7 +21,7 @@ These **new** tools are found in [ais_shipping_voyage_splitter_phase3].py.  Code
 [ais_shipping_voyage_splitter_phase3]:https://github.com/EarthScientist/ShippingLanes/blob/master/ais_shipping_voyage_splitter_phase3.py
 
 
-## GLOSSARY OF THE FIELDS:
+#### GLOSSARY OF THE FIELDS:
 --------------------------
 	Base_stati = Base station ID
 	COG = [AIS] Degrees (0-359); 511 = not available = default
@@ -56,3 +56,9 @@ These **new** tools are found in [ais_shipping_voyage_splitter_phase3].py.  Code
 	dir4_end = [III] this is the old 'simple_direction' with a 4-quadrant return of directionality between the last 2 points of the voyage
 	dir8_begin = [III] a new 8 direction version of the simple direction between the first 2 points of the voyage.
 	dir8_end = [III] a new 8 direction version of the simple direction between the last 2 points of the voyage.
+
+#### METADATA
+
+[METADATA](https://github.com/EarthScientist/ShippingLanes/blob/master/METADATA/metadata_shipping_voyages_phase3.xml) Describing all of the data in a global way following ISO-19119 using GeoNetwork.
+
+
